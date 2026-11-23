@@ -350,9 +350,6 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {filtered.length} of {clients.length}
-          </span>
         </div>
       </div>
 

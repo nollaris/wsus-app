@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
+import { canManageUsers } from "@/lib/rbac";
 
 const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout"];
+const ADMIN_PAGE_PATHS = ["/users"];
+const ADMIN_API_PATHS = ["/api/users", "/api/settings/reset"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -32,6 +35,23 @@ export async function proxy(request: NextRequest) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  if (
+    ADMIN_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`)) &&
+    !canManageUsers(session.role)
+  ) {
+    return NextResponse.json(
+      { error: "Forbidden: Admin access required." },
+      { status: 403 }
+    );
+  }
+
+  if (
+    ADMIN_PAGE_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`)) &&
+    !canManageUsers(session.role)
+  ) {
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return NextResponse.next();

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { canManageServers } from "@/lib/rbac";
 
 export async function PATCH(
   request: Request,
@@ -9,6 +10,12 @@ export async function PATCH(
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!canManageServers(session.role)) {
+    return NextResponse.json(
+      { error: "Forbidden: Admin access required." },
+      { status: 403 }
+    );
   }
 
   const { id } = await context.params;
@@ -25,11 +32,25 @@ export async function PATCH(
   if (typeof body?.baseUrl === "string" && body.baseUrl.trim()) {
     data.baseUrl = body.baseUrl.trim().replace(/\/+$/, "");
   }
-  if (typeof body?.apiKey === "string" && body.apiKey.trim()) {
-    data.apiKey = body.apiKey.trim();
+  if (typeof body?.apiKey === "string") {
+    const trimmedKey = body.apiKey.trim();
+    if (!trimmedKey) {
+      return NextResponse.json(
+        { error: "API Key cannot be empty." },
+        { status: 400 }
+      );
+    }
+    data.apiKey = trimmedKey;
   }
   if (typeof body?.enabled === "boolean") {
     data.enabled = body.enabled;
+  }
+
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json(
+      { error: "No valid fields provided to update." },
+      { status: 400 }
+    );
   }
 
   const updated = await prisma.wsusServer.update({
@@ -57,6 +78,12 @@ export async function DELETE(
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!canManageServers(session.role)) {
+    return NextResponse.json(
+      { error: "Forbidden: Admin access required." },
+      { status: 403 }
+    );
   }
 
   const { id } = await context.params;

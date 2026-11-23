@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
+import { LazyDataRefresh } from "@/components/lazy-data-refresh";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Breadcrumb,
@@ -30,6 +31,7 @@ function getPageLabel(pathname: string): string {
   if (pathname.startsWith("/clients/")) return "Client Details";
   if (pathname === "/patches") return "Patches";
   if (pathname === "/sync") return "Sync & Servers";
+  if (pathname === "/users") return "Users & RBAC";
   if (pathname === "/settings") return "Settings";
   return "Overview";
 }
@@ -44,6 +46,7 @@ export function AppShell({
 
   return (
     <SidebarProvider defaultOpen={defaultSidebarOpen}>
+      <LazyDataRefresh />
       <AppSidebar user={user} />
       <SidebarInset className="min-w-0 overflow-x-clip">
         <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between gap-2 px-4 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 border-b bg-background/95 backdrop-blur">

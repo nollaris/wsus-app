@@ -10,7 +10,9 @@ import {
   Settings2,
   ShieldAlert,
   ShieldCheck,
+  Users,
 } from "lucide-react";
+import { canManageUsers } from "@/lib/rbac";
 import { NavUser } from "@/components/nav-user";
 import {
   Sidebar,
@@ -25,11 +27,12 @@ import {
 } from "@workspace/ui/components/ui/sidebar";
 
 const NAV_ITEMS = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Client Status", url: "/clients", icon: Monitor },
-  { title: "Patches", url: "/patches", icon: ShieldAlert },
-  { title: "Sync & Servers", url: "/sync", icon: RefreshCw },
-  { title: "Settings", url: "/settings", icon: Settings2 },
+  { title: "Dashboard", url: "/", icon: LayoutDashboard, adminOnly: false },
+  { title: "Client Status", url: "/clients", icon: Monitor, adminOnly: false },
+  { title: "Patches", url: "/patches", icon: ShieldAlert, adminOnly: false },
+  { title: "Sync & Servers", url: "/sync", icon: RefreshCw, adminOnly: false },
+  { title: "Users", url: "/users", icon: Users, adminOnly: true },
+  { title: "Settings", url: "/settings", icon: Settings2, adminOnly: false },
 ];
 
 export function AppSidebar({
@@ -67,7 +70,9 @@ export function AppSidebar({
         <SidebarGroup>
           <SidebarGroupLabel>Platform</SidebarGroupLabel>
           <SidebarMenu>
-            {NAV_ITEMS.map((item) => {
+            {NAV_ITEMS.filter(
+              (item) => !item.adminOnly || canManageUsers(user.role)
+            ).map((item) => {
               const Icon = item.icon;
               const isActive =
                 item.url === "/"

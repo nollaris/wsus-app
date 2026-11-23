@@ -139,6 +139,16 @@ export function PatchesBrowser({
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    const handleDataUpdated = () => {
+      void fetchData();
+    };
+    window.addEventListener("wsus:data-updated", handleDataUpdated);
+    return () => {
+      window.removeEventListener("wsus:data-updated", handleDataUpdated);
+    };
+  }, [fetchData]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

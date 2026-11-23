@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { canManageServers } from "@/lib/rbac";
 
 export async function GET() {
   const session = await getSession();
@@ -29,6 +30,12 @@ export async function POST(request: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!canManageServers(session.role)) {
+    return NextResponse.json(
+      { error: "Forbidden: Admin access required." },
+      { status: 403 }
+    );
   }
 
   try {

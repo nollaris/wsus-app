@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { canTriggerSync } from "@/lib/rbac";
 import { testWsusServerConnection } from "@/lib/wsus-api-sync";
 
 export async function POST(
@@ -10,6 +11,12 @@ export async function POST(
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!canTriggerSync(session.role)) {
+    return NextResponse.json(
+      { error: "Forbidden: Operator or Admin access required." },
+      { status: 403 }
+    );
   }
 
   const { id } = await context.params;

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { syncWsusServerById } from "@/lib/wsus-api-sync";
+import { startBackgroundSync } from "@/lib/wsus-api-sync";
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -15,19 +14,28 @@ export async function POST(request: Request) {
     typeof body?.serverId === "number" ? body.serverId : null;
 
   if (requestedServerId !== null) {
-    try {
-      const result = await syncWsusServerById(requestedServerId);
-      revalidatePath("/", "layout");
-      return NextResponse.json({ success: true, results: [result] });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Sync failed";
-      return NextResponse.json({ success: false, error: message }, { status: 502 });
+    const server = await prisma.wsusServer.findUnique({
+      where: { id: requestedServerId },
+      select: { id: true },
+    });
+    if (!server) {
+      return NextResponse.json(
+        { success: false, error: "WSUS server not found." },
+        { status: 404 }
+      );
     }
+
+    const result = await startBackgroundSync([server.id]);
+    return NextResponse.json(
+      { success: true, ...result },
+      { status: 202 }
+    );
   }
 
   const enabledServers = await prisma.wsusServer.findMany({
     where: { enabled: true },
     orderBy: { name: "asc" },
+    select: { id: true },
   });
 
   if (enabledServers.length === 0) {
@@ -37,25 +45,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const results = [];
-  const errors = [];
-
-  for (const srv of enabledServers) {
-    try {
-      results.push(await syncWsusServerById(srv.id));
-    } catch (err) {
-      errors.push({
-        serverId: srv.id,
-        serverName: srv.name,
-        error: err instanceof Error ? err.message : "Sync failed",
-      });
-    }
-  }
-
-  revalidatePath("/", "layout");
-  return NextResponse.json({
-    success: errors.length === 0,
-    results,
-    errors,
-  });
+  const result = await startBackgroundSync(enabledServers.map((s) => s.id));
+  return NextResponse.json(
+    { success: true, ...result },
+    { status: 202 }
+  );
 }

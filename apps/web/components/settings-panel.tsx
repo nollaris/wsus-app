@@ -3,6 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
+import { canResetDatabase } from "@/lib/rbac";
 import {
   Sun,
   Moon,
@@ -238,28 +239,36 @@ export function SettingsPanel({ user, initialCounts }: SettingsPanelProps) {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 pt-2">
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => {
-                setConfirmText("");
-                setDialogAction("reseed");
-              }}
-            >
-              <RotateCcw className="h-4 w-4" />
-              Re-seed from data/ CSVs
-            </Button>
-            <Button
-              variant="destructive"
-              className="gap-2"
-              onClick={() => {
-                setConfirmText("");
-                setDialogAction("truncate");
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-              Clear All WSUS Data
-            </Button>
+            {canResetDatabase(user.role) ? (
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => {
+                    setConfirmText("");
+                    setDialogAction("reseed");
+                  }}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Re-seed from data/ CSVs
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="gap-2"
+                  onClick={() => {
+                    setConfirmText("");
+                    setDialogAction("truncate");
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Clear All WSUS Data
+                </Button>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Database reset controls require an <span className="font-semibold">Admin</span> role.
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>

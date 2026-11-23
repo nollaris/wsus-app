@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 import { SyncHistoryTable } from "@/components/sync-history-table";
 import { WsusServersManager } from "@/components/wsus-servers-manager";
 import {
@@ -75,8 +76,9 @@ function ServerBadges({ servers }: { servers: string[] }) {
 }
 
 export default async function SyncCatalogPage() {
-  const [wsusServers, settingsList, history, products, classifications] =
+  const [session, wsusServers, settingsList, history, products, classifications] =
     await Promise.all([
+      getSession(),
       prisma.wsusServer.findMany({ orderBy: { name: "asc" } }),
       prisma.synchronizationSetting.findMany({ orderBy: { serverName: "asc" } }),
       prisma.synchronizationHistory.findMany({
@@ -125,7 +127,10 @@ export default async function SyncCatalogPage() {
         </p>
       </div>
 
-      <WsusServersManager initialServers={serializedServers} />
+      <WsusServersManager
+        initialServers={serializedServers}
+        userRole={session?.role ?? "viewer"}
+      />
 
       {/* Sync Settings */}
       {settingsList.length > 0 && (

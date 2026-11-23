@@ -3,6 +3,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { canResetDatabase } from "@/lib/rbac";
 import { importCsvBuffer } from "@/lib/csv-importer";
 
 const DATA_FILES = [
@@ -49,6 +50,12 @@ export async function POST(request: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!canResetDatabase(session.role)) {
+    return NextResponse.json(
+      { error: "Forbidden: Admin access required." },
+      { status: 403 }
+    );
   }
 
   try {

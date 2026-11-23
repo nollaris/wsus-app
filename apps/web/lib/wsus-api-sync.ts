@@ -1,4 +1,11 @@
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+
+const globalForSync = globalThis as unknown as {
+  activeWsusSyncs?: Set<number>;
+};
+const activeWsusSyncs =
+  globalForSync.activeWsusSyncs ?? (globalForSync.activeWsusSyncs = new Set<number>());
 
 interface WsusApiEnvelope<T> {
   success: boolean;
@@ -395,4 +402,39 @@ export async function syncWsusServerById(serverId: number) {
     });
     throw err;
   }
+}
+
+export async function startBackgroundSync(serverIds: number[]) {
+  const toStart = serverIds.filter((id) => !activeWsusSyncs.has(id));
+  if (toStart.length === 0) {
+    return { startedIds: [] as number[], alreadyRunningIds: serverIds };
+  }
+
+  await prisma.wsusServer.updateMany({
+    where: { id: { in: toStart } },
+    data: { lastStatus: "Syncing", lastError: null },
+  });
+
+  for (const id of toStart) {
+    activeWsusSyncs.add(id);
+    void syncWsusServerById(id)
+      .then(() => {
+        try {
+          revalidatePath("/", "layout");
+        } catch {
+          // revalidatePath may throw outside request context; UI polls & router.refresh() handles it
+        }
+      })
+      .catch(() => {
+        // Error is already persisted to WsusServer.lastStatus/lastError
+      })
+      .finally(() => {
+        activeWsusSyncs.delete(id);
+      });
+  }
+
+  return {
+    startedIds: toStart,
+    alreadyRunningIds: serverIds.filter((id) => !toStart.includes(id)),
+  };
 }

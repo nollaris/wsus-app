@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Search, ChevronLeft, ChevronRight, Info } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -170,85 +171,117 @@ export function PatchesBrowser({
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={classification}
-              onValueChange={(v) => {
-                setClassification(v ?? "all");
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Classification" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Classifications</SelectItem>
-                {classifications.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Label
+                htmlFor="patches-classification-filter"
+                className="text-sm text-muted-foreground whitespace-nowrap"
+              >
+                Classification
+              </Label>
+              <Select
+                value={classification}
+                onValueChange={(v) => {
+                  setClassification(v ?? "all");
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger id="patches-classification-filter" className="w-[180px]">
+                  <SelectValue placeholder="Classification" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Classifications</SelectItem>
+                  {classifications.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             {tab === "inventory" ? (
               <>
+                <div className="flex items-center gap-2">
+                  <Label
+                    htmlFor="patches-severity-filter"
+                    className="text-sm text-muted-foreground whitespace-nowrap"
+                  >
+                    Severity
+                  </Label>
+                  <Select
+                    value={severity}
+                    onValueChange={(v) => {
+                      setSeverity(v ?? "all");
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger id="patches-severity-filter" className="w-[150px]">
+                      <SelectValue placeholder="Severity" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Severities</SelectItem>
+                      {severities.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label
+                    htmlFor="patches-approval-filter"
+                    className="text-sm text-muted-foreground whitespace-nowrap"
+                  >
+                    Approval
+                  </Label>
+                  <Select
+                    value={approved}
+                    onValueChange={(v) => {
+                      setApproved(v ?? "all");
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger id="patches-approval-filter" className="w-[150px]">
+                      <SelectValue placeholder="Approval" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Approvals</SelectItem>
+                      <SelectItem value="approved">Approved Only</SelectItem>
+                      <SelectItem value="declined">Declined Only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Label
+                  htmlFor="patches-state-filter"
+                  className="text-sm text-muted-foreground whitespace-nowrap"
+                >
+                  Install State
+                </Label>
                 <Select
-                  value={severity}
+                  value={stateFilter}
                   onValueChange={(v) => {
-                    setSeverity(v ?? "all");
+                    setStateFilter(v ?? "all");
                     setPage(1);
                   }}
                 >
-                  <SelectTrigger className="w-[150px]">
-                    <SelectValue placeholder="Severity" />
+                  <SelectTrigger id="patches-state-filter" className="w-[180px]">
+                    <SelectValue placeholder="Install State" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Severities</SelectItem>
-                    {severities.map((s) => (
+                    <SelectItem value="all">All States</SelectItem>
+                    {states.map((s) => (
                       <SelectItem key={s} value={s}>
                         {s}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <Select
-                  value={approved}
-                  onValueChange={(v) => {
-                    setApproved(v ?? "all");
-                    setPage(1);
-                  }}
-                >
-                  <SelectTrigger className="w-[150px]">
-                    <SelectValue placeholder="Approval" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Approvals</SelectItem>
-                    <SelectItem value="approved">Approved Only</SelectItem>
-                    <SelectItem value="declined">Declined Only</SelectItem>
-                  </SelectContent>
-                </Select>
-              </>
-            ) : (
-              <Select
-                value={stateFilter}
-                onValueChange={(v) => {
-                  setStateFilter(v ?? "all");
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Install State" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All States</SelectItem>
-                  {states.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              </div>
             )}
           </div>
         </div>

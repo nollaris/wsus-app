@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -39,6 +41,8 @@ const STATE_BADGE: Record<string, string> = {
 export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const states = useMemo(() => {
     return Array.from(new Set(patches.map((p) => p.installationState))).sort();
@@ -59,6 +63,13 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
     });
   }, [patches, search, stateFilter]);
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginated = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, currentPage, pageSize]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -68,12 +79,27 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
             placeholder="Search update title or KB..."
             className="pl-9"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
         <div className="flex items-center gap-2">
-          <Select value={stateFilter} onValueChange={(v) => setStateFilter(v ?? "all")}>
-            <SelectTrigger className="w-[180px]">
+          <Label
+            htmlFor="client-patches-state-filter"
+            className="text-sm text-muted-foreground whitespace-nowrap"
+          >
+            Install State
+          </Label>
+          <Select
+            value={stateFilter}
+            onValueChange={(v) => {
+              setStateFilter(v ?? "all");
+              setPage(1);
+            }}
+          >
+            <SelectTrigger id="client-patches-state-filter" className="w-[180px]">
               <SelectValue placeholder="Installation State" />
             </SelectTrigger>
             <SelectContent>
@@ -103,14 +129,14 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {paginated.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                   No updates match the filter.
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((p) => (
+              paginated.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="max-w-md font-medium">
                     <span className="line-clamp-2">{p.updateTitle}</span>
@@ -133,6 +159,55 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
             )}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <span>Rows per page:</span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => {
+              setPageSize(Number.parseInt(v ?? "10", 10));
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="h-8 w-[76px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10">10</SelectItem>
+              <SelectItem value="20">20</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+            </SelectContent>
+          </Select>
+          <span>
+            Showing{" "}
+            {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}–
+            {Math.min(currentPage * pageSize, filtered.length)} of{" "}
+            {filtered.length}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span>
+            Page {currentPage} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            <ChevronLeft className="h-4 w-4" /> Prev
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            Next <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </div>
   );

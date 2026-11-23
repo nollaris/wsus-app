@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
+import { io } from "next/cache";
 import { cookies } from "next/headers";
 
 export const SESSION_COOKIE_NAME = "wsus_session";
@@ -53,5 +54,7 @@ export async function getSession(): Promise<SessionPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   if (!token) return null;
+  // jwtVerify checks exp/nbf against new Date(), which must be deferred out of prerenders
+  await io();
   return verifySessionToken(token);
 }

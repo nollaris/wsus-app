@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Search, Monitor, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -90,6 +91,12 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
           />
         </div>
         <div className="flex items-center gap-2">
+          <Label
+            htmlFor="clients-target-group-filter"
+            className="text-sm text-muted-foreground whitespace-nowrap"
+          >
+            Target Group
+          </Label>
           <Select
             value={groupFilter}
             onValueChange={(v) => {
@@ -97,7 +104,7 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger id="clients-target-group-filter" className="w-[220px]">
               <SelectValue placeholder="Target Group" />
             </SelectTrigger>
             <SelectContent>

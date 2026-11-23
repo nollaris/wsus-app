@@ -71,6 +71,8 @@ interface RemoteComputerUpdateStatus {
   kbArticle?: string | null;
   classification: string;
   installationState: string;
+  errorCode?: string | null;
+  errorMessage?: string | null;
 }
 
 interface RemoteComputerDetail {
@@ -220,6 +222,8 @@ export async function syncWsusServerById(serverId: number) {
       installationState: string;
       approvalAction: string;
       approvalTargetGroupId: string;
+      errorCode: string | null;
+      errorMessage: string | null;
     }> = [];
 
     const serverName = server.name;
@@ -248,6 +252,8 @@ export async function syncWsusServerById(serverId: number) {
             updateApprovalMap.get(`${upd.updateId}:${upd.revisionNumber}`) ??
             "Unknown",
           approvalTargetGroupId: "",
+          errorCode: upd.errorCode ?? null,
+          errorMessage: upd.errorMessage ?? null,
         });
       }
     }

@@ -45,6 +45,8 @@ export default async function ClientDetailPage({
         classification: true,
         installationState: true,
         approvalAction: true,
+        errorCode: true,
+        errorMessage: true,
       },
     }),
   ]);

@@ -1,8 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertCircle, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@workspace/ui/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@workspace/ui/components/ui/dialog";
 import { Input } from "@workspace/ui/components/ui/input";
 import { Label } from "@workspace/ui/components/ui/label";
 import { Badge } from "@workspace/ui/components/ui/badge";
@@ -29,6 +36,8 @@ export interface ClientPatchRow {
   classification: string;
   installationState: string;
   approvalAction: string;
+  errorCode?: string | null;
+  errorMessage?: string | null;
 }
 
 const STATE_BADGE: Record<string, string> = {
@@ -52,6 +61,9 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [selectedFailure, setSelectedFailure] = useState<ClientPatchRow | null>(
+    null
+  );
 
   function handleSort(key: PatchSortKey) {
     if (sortKey === key) {
@@ -172,6 +184,17 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
                 <TableRow key={p.id}>
                   <TableCell className="max-w-md font-medium">
                     <span className="line-clamp-2">{p.updateTitle}</span>
+                    {p.installationState === "Failed" &&
+                      (p.errorCode || p.errorMessage) && (
+                        <div className="mt-1 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                          {p.errorCode && (
+                            <span className="mr-1.5 font-mono font-semibold">
+                              [{p.errorCode}]
+                            </span>
+                          )}
+                          <span>{p.errorMessage ?? "Installation failed"}</span>
+                        </div>
+                      )}
                   </TableCell>
                   <TableCell className="font-mono text-xs">
                     {p.kbArticle ? `KB${p.kbArticle}` : "-"}
@@ -179,12 +202,26 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
                   <TableCell className="text-xs">{p.classification}</TableCell>
                   <TableCell className="text-xs">{p.approvalAction}</TableCell>
                   <TableCell className="text-right">
-                    <Badge
-                      variant="secondary"
-                      className={STATE_BADGE[p.installationState] || ""}
-                    >
-                      {p.installationState}
-                    </Badge>
+                    <div className="inline-flex items-center justify-end gap-2">
+                      <Badge
+                        variant="secondary"
+                        className={STATE_BADGE[p.installationState] || ""}
+                      >
+                        {p.installationState}
+                      </Badge>
+                      {p.installationState === "Failed" && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs text-destructive border-destructive/30 hover:bg-destructive/10"
+                          onClick={() => setSelectedFailure(p)}
+                        >
+                          <AlertCircle className="mr-1 h-3.5 w-3.5" />
+                          View Reason
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -241,6 +278,62 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={selectedFailure !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedFailure(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              Update Failure Reason
+            </DialogTitle>
+            <DialogDescription>
+              {selectedFailure?.updateTitle}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedFailure && (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">KB Article</div>
+                  <div className="font-mono font-medium">
+                    {selectedFailure.kbArticle
+                      ? `KB${selectedFailure.kbArticle}`
+                      : "-"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Error Code</div>
+                  <div className="font-mono font-semibold text-destructive">
+                    {selectedFailure.errorCode ?? "Not available"}
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-md border bg-muted/40 p-3">
+                <div className="mb-1 text-xs font-medium text-muted-foreground">
+                  WSUS Event History Details
+                </div>
+                {selectedFailure.errorMessage ? (
+                  <p className="whitespace-pre-wrap text-xs leading-relaxed">
+                    {selectedFailure.errorMessage}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    No error event was found in WSUS Event History for this
+                    update. If you recently updated the WSUS API on the server,
+                    run Sync again from the Sync &amp; Servers page, or check
+                    the Windows Update Event Log on the client machine.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

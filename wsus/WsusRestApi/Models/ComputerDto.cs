@@ -59,5 +59,8 @@ namespace WsusRestApi.Models
         public string MsrcSeverity { get; set; }
         public string InstallationState { get; set; }
         public DateTime? ArrivalDateUtc { get; set; }
+        public string ErrorCode { get; set; }
+        public string ErrorMessage { get; set; }
+        public DateTime? LastErrorTimeUtc { get; set; }
     }
 }

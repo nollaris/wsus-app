@@ -63,6 +63,34 @@ namespace WsusRestApi.Services
             ComputerDto computerDto = MapComputer(serverId, target);
             ComputerDetailDto detail = new ComputerDetailDto { Computer = computerDto };
 
+            Dictionary<string, IUpdateEvent> latestErrorsByUpdate = new Dictionary<string, IUpdateEvent>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                UpdateEventCollection events = server.GetUpdateEventHistory(DateTime.UtcNow.AddDays(-60), DateTime.UtcNow);
+                if (events != null)
+                {
+                    foreach (IUpdateEvent evt in events)
+                    {
+                        if (!string.Equals(evt.ComputerId, computerId, StringComparison.OrdinalIgnoreCase)) continue;
+                        if (evt.UpdateId == null) continue;
+                        int errCode = (int)evt.ErrorCode;
+                        if (!evt.IsError && errCode == 0) continue;
+
+                        string updKey = evt.UpdateId.UpdateId.ToString();
+                        IUpdateEvent existingEvt;
+                        if (!latestErrorsByUpdate.TryGetValue(updKey, out existingEvt) ||
+                            evt.CreationDate > existingEvt.CreationDate)
+                        {
+                            latestErrorsByUpdate[updKey] = evt;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore if event history is unavailable on this WSUS target
+            }
+
             UpdateInstallationInfoCollection installInfoCollection = target.GetUpdateInstallationInfoPerUpdate(new UpdateScope());
             foreach (IUpdateInstallationInfo info in installInfoCollection)
             {
@@ -70,16 +98,29 @@ namespace WsusRestApi.Services
                 if (update == null)
                     continue;
 
+                string updIdStr = update.Id.UpdateId.ToString();
+                IUpdateEvent errEvt = null;
+                if (info.UpdateInstallationState == UpdateInstallationState.Failed)
+                {
+                    latestErrorsByUpdate.TryGetValue(updIdStr, out errEvt);
+                }
+
+                int errHResult = errEvt != null ? (int)errEvt.ErrorCode : 0;
                 ComputerUpdateStatusDto item = new ComputerUpdateStatusDto
                 {
-                    UpdateId = update.Id.UpdateId.ToString(),
+                    UpdateId = updIdStr,
                     RevisionNumber = update.Id.RevisionNumber,
                     Title = update.Title,
                     KbArticle = ExtractPrimaryKb(update),
                     Classification = update.UpdateClassificationTitle ?? "Other",
                     MsrcSeverity = update.MsrcSeverity.ToString(),
                     InstallationState = info.UpdateInstallationState.ToString(),
-                    ArrivalDateUtc = ToNullableUtc(update.ArrivalDate)
+                    ArrivalDateUtc = ToNullableUtc(update.ArrivalDate),
+                    ErrorCode = errHResult != 0
+                        ? ("0x" + errHResult.ToString("X8"))
+                        : null,
+                    ErrorMessage = errEvt != null ? errEvt.Message : null,
+                    LastErrorTimeUtc = errEvt != null ? ToNullableUtc(errEvt.CreationDate) : null
                 };
 
                 switch (info.UpdateInstallationState)

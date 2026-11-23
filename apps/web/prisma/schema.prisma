@@ -100,6 +100,8 @@ model ClientPatchStatus {
   installationState     String
   approvalAction        String
   approvalTargetGroupId String
+  errorCode             String?
+  errorMessage          String?
 
   @@index([serverName])
   @@index([computerTargetId])

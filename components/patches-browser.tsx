@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
-import { Search, ChevronLeft, ChevronRight, Info } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -22,13 +23,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface PatchInventoryItem {
@@ -95,9 +89,6 @@ export function PatchesBrowser({
   const [statusItems, setStatusItems] = useState<ClientPatchStatusItem[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  const [selectedPatch, setSelectedPatch] = useState<PatchInventoryItem | null>(
-    null
-  );
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -352,13 +343,13 @@ export function PatchesBrowser({
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedPatch(p)}
+                        <Link
+                          href={`/patches/${encodeURIComponent(p.updateId)}`}
+                          className={buttonVariants({ variant: "ghost", size: "sm" })}
+                          aria-label={`View details for ${p.title}`}
                         >
-                          <Info className="h-4 w-4" />
-                        </Button>
+                          <Eye className="h-4 w-4" />
+                        </Link>
                       </TableCell>
                     </TableRow>
                   ))
@@ -450,57 +441,6 @@ export function PatchesBrowser({
           </Button>
         </div>
       </div>
-
-      {/* Patch Detail Modal */}
-      <Dialog
-        open={Boolean(selectedPatch)}
-        onOpenChange={(open) => {
-          if (!open) setSelectedPatch(null);
-        }}
-      >
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>{selectedPatch?.title}</DialogTitle>
-            <DialogDescription>
-              {selectedPatch?.kbArticle ? `KB${selectedPatch.kbArticle} · ` : ""}
-              {selectedPatch?.classification} · Severity:{" "}
-              {selectedPatch?.msrcSeverity}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-2 rounded-md bg-muted/50 p-3 text-xs">
-              <div>
-                <span className="text-muted-foreground">Products:</span>{" "}
-                <span className="font-medium">{selectedPatch?.products || "-"}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Revision:</span>{" "}
-                <span className="font-mono">{selectedPatch?.revisionNumber}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Arrival Date:</span>{" "}
-                <span className="font-mono">
-                  {selectedPatch?.arrivalDate
-                    ? selectedPatch.arrivalDate.slice(0, 10)
-                    : "-"}
-                </span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Type:</span>{" "}
-                <span>{selectedPatch?.updateType || "-"}</span>
-              </div>
-            </div>
-            <div>
-              <h4 className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
-                Description
-              </h4>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                {selectedPatch?.description || "No description available."}
-              </p>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

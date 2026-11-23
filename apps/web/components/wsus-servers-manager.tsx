@@ -73,14 +73,18 @@ export function WsusServersManager({
   const [apiKey, setApiKey] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
 
-  const [startingSync, setStartingSync] = React.useState(false);
-  const [testingId, setTestingId] = React.useState<number | null>(null);
+  const [startingAll, setStartingAll] = React.useState(false);
+  const [startingServerIds, setStartingServerIds] = React.useState<number[]>([]);
   const [feedback, setFeedback] = React.useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
 
+  const enabledServers = servers.filter((s) => s.enabled);
   const anySyncing = servers.some((s) => s.lastStatus === "Syncing");
+  const allEnabledSyncing =
+    enabledServers.length > 0 &&
+    enabledServers.every((s) => s.lastStatus === "Syncing");
 
   React.useEffect(() => {
     setServers(initialServers);
@@ -152,7 +156,13 @@ export function WsusServersManager({
     serverId: number | "all",
     scope: SyncScope = "all"
   ) {
-    setStartingSync(true);
+    if (serverId === "all") {
+      setStartingAll(true);
+    } else {
+      setStartingServerIds((prev) =>
+        prev.includes(serverId) ? prev : [...prev, serverId]
+      );
+    }
     setFeedback(null);
     try {
       const res = await fetch("/api/wsus-sync", {
@@ -180,7 +190,11 @@ export function WsusServersManager({
         message: err instanceof Error ? err.message : "Sync failed",
       });
     } finally {
-      setStartingSync(false);
+      if (serverId === "all") {
+        setStartingAll(false);
+      } else {
+        setStartingServerIds((prev) => prev.filter((id) => id !== serverId));
+      }
     }
   }
 
@@ -205,13 +219,13 @@ export function WsusServersManager({
               variant="outline"
               size="sm"
               disabled={
-                startingSync ||
-                anySyncing ||
-                servers.filter((s) => s.enabled).length === 0
+                startingAll ||
+                allEnabledSyncing ||
+                enabledServers.length === 0
               }
               onClick={() => handleSync("all")}
             >
-              {startingSync || anySyncing ? (
+              {startingAll || allEnabledSyncing ? (
                 <Loader2 className="mr-2 size-4 animate-spin" />
               ) : (
                 <RefreshCw className="mr-2 size-4" />
@@ -317,10 +331,17 @@ export function WsusServersManager({
                   <TableHead>API Base URL</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last Synced</TableHead>
+                  {allowSync && (
+                    <TableHead className="text-right">Action</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {servers.map((srv) => (
+                {servers.map((srv) => {
+                  const isRowSyncing =
+                    srv.lastStatus === "Syncing" ||
+                    startingServerIds.includes(srv.id);
+                  return (
                   <TableRow key={srv.id}>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
@@ -383,8 +404,26 @@ export function WsusServersManager({
                           })
                         : "-"}
                     </TableCell>
+                    {allowSync && (
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!srv.enabled || isRowSyncing}
+                          onClick={() => handleSync(srv.id)}
+                        >
+                          {isRowSyncing ? (
+                            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="mr-1.5 size-3.5" />
+                          )}
+                          Sync
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

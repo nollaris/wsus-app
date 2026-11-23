@@ -36,26 +36,38 @@ export const metadata: Metadata = {
 export default async function DashboardPage() {
   const [
     totalClients,
-    totalPatches,
-    approvedPatches,
+    patchTotalsRows,
     stateGroups,
-    severityGroups,
+    severityRows,
     recentSyncs,
     attentionClientsRaw,
   ] = await Promise.all([
     prisma.clientStatus.count(),
-    prisma.patchInventory.count(),
-    prisma.patchInventory.count({ where: { isApproved: true } }),
+    prisma.$queryRaw<Array<{ total: bigint; approved: bigint }>>`
+      SELECT
+        COUNT(DISTINCT "updateId") AS "total",
+        COUNT(DISTINCT CASE WHEN "isApproved" = true THEN "updateId" END) AS "approved"
+      FROM "PatchInventory"
+      WHERE "isDeclined" = false
+        AND "isSuperseded" = false
+        AND "isLatestRevision" = true
+    `,
     prisma.clientPatchStatus.groupBy({
       by: ["installationState"],
       _count: { installationState: true },
       orderBy: { _count: { installationState: "desc" } },
     }),
-    prisma.patchInventory.groupBy({
-      by: ["msrcSeverity"],
-      _count: { msrcSeverity: true },
-      orderBy: { _count: { msrcSeverity: "desc" } },
-    }),
+    prisma.$queryRaw<Array<{ severity: string; count: bigint }>>`
+      SELECT
+        "msrcSeverity" AS "severity",
+        COUNT(DISTINCT "updateId") AS "count"
+      FROM "PatchInventory"
+      WHERE "isDeclined" = false
+        AND "isSuperseded" = false
+        AND "isLatestRevision" = true
+      GROUP BY "msrcSeverity"
+      ORDER BY "count" DESC
+    `,
     prisma.synchronizationHistory.findMany({
       orderBy: { startTime: "desc" },
       take: 5,
@@ -69,6 +81,9 @@ export default async function DashboardPage() {
     }),
   ]);
 
+  const totalPatches = Number(patchTotalsRows[0]?.total ?? 0);
+  const approvedPatches = Number(patchTotalsRows[0]?.approved ?? 0);
+
   const stateMap = new Map(
     stateGroups.map((g) => [g.installationState, g._count.installationState])
   );
@@ -81,9 +96,9 @@ export default async function DashboardPage() {
     count: g._count.installationState,
   }));
 
-  const severityData = severityGroups.map((g) => ({
-    severity: g.msrcSeverity,
-    count: g._count.msrcSeverity,
+  const severityData = severityRows.map((g) => ({
+    severity: g.severity,
+    count: Number(g.count),
   }));
 
   // Aggregate Failed + NotInstalled per client

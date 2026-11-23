@@ -34,6 +34,7 @@ Base URL: `http://<wsus-host>:8530/wsus-api/api/v1`
 
 1. คัดลอกโฟลเดอร์ `wsus/` ไปยังเครื่อง **WSUS Server**
 2. ดับเบิลคลิก **[Install-WsusRestApi.bat](Install-WsusRestApi.bat)** (หรือรัน `powershell -ExecutionPolicy Bypass -File install-on-wsus.ps1` ด้วยสิทธิ์ Administrator)
-3. แก้ไขค่าตั้งค่าหลังติดตั้ง:
-   - `C:\inetpub\wsus-api\Config\security.json` (เปลี่ยน `apiKeys` / `bearerTokens`)
+   - สคริปต์จะสุ่มค่า **X-Api-Key** และ **Bearer Token** (48-char hex) ให้อัตโนมัติใน `C:\inetpub\wsus-api\Config\security.json` และแสดงค่าบนหน้าจอหลังติดตั้งเสร็จ (หากต้องการสุ่มใหม่ในการติดตั้งซ้ำ ให้รันพร้อม `-RegenerateTokens`)
+3. แก้ไขค่าตั้งค่าเพิ่มเติม (ถ้าต้องการ):
+   - `C:\inetpub\wsus-api\Config\security.json`
    - `C:\inetpub\wsus-api\Config\Wsus\wsus-settings.json` (ตั้งค่า `serverId`/`serverName` และรอบ refresh 5 นาที)

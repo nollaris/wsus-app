@@ -383,7 +383,16 @@ export function WsusServersManager({
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {srv.lastSyncedAt
-                        ? new Date(srv.lastSyncedAt).toLocaleString()
+                        ? new Date(srv.lastSyncedAt).toLocaleString("en-US", {
+                            year: "numeric",
+                            month: "short",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                            hour12: false,
+                            timeZone: "Asia/Bangkok",
+                          })
                         : "-"}
                     </TableCell>
                     <TableCell className="text-right">

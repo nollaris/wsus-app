@@ -11,8 +11,20 @@ param(
     [string]$AppPath = "/wsus-api",
     [string]$AppPoolName = "WsusRestApiPool",
     [string]$InstallDir = "C:\inetpub\wsus-api",
-    [int]$Port = 8530
+    [int]$Port = 8530,
+    [switch]$RegenerateTokens
 )
+
+function New-RandomToken {
+    $bytes = New-Object byte[] 24
+    $rng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
+    try {
+        $rng.GetBytes($bytes)
+    } finally {
+        $rng.Dispose()
+    }
+    return (($bytes | ForEach-Object { $_.ToString("x2") }) -join "")
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -67,9 +79,45 @@ $LogsDir = Join-Path $InstallDir "App_Data\Logs"
 New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 New-Item -ItemType Directory -Path $LogsDir -Force | Out-Null
 
+$TargetConfigDir = Join-Path $InstallDir "Config"
+$TargetSecurityFile = Join-Path $TargetConfigDir "security.json"
+$DefaultPlaceholderKey = "wsus-readonly-api-key-change-me-2026"
+$ExistingSecurityJson = $null
+
+if ((Test-Path $TargetSecurityFile) -and -not $RegenerateTokens) {
+    try {
+        $ExistingSecurityJson = [System.IO.File]::ReadAllText($TargetSecurityFile) | ConvertFrom-Json
+    } catch {
+        $ExistingSecurityJson = $null
+    }
+}
+
 Copy-Item -Path (Join-Path $SourceDir "Global.asax") -Destination $InstallDir -Force
 Copy-Item -Path (Join-Path $SourceDir "Web.config") -Destination $InstallDir -Force
 Copy-Item -Path (Join-Path $SourceDir "Config") -Destination $InstallDir -Recurse -Force
+
+$ShouldGenerateTokens = $RegenerateTokens -or
+    (-not $ExistingSecurityJson) -or
+    (-not $ExistingSecurityJson.apiKeys) -or
+    ($ExistingSecurityJson.apiKeys -contains $DefaultPlaceholderKey)
+
+if ($ShouldGenerateTokens) {
+    Write-Step "Generating random API Key and Bearer Token..."
+    $secObj = [System.IO.File]::ReadAllText($TargetSecurityFile) | ConvertFrom-Json
+    $generatedApiKey = New-RandomToken
+    $generatedBearer = New-RandomToken
+    $secObj.apiKeys = @($generatedApiKey)
+    $secObj.bearerTokens = @($generatedBearer)
+    $jsonOut = $secObj | ConvertTo-Json -Depth 4
+    [System.IO.File]::WriteAllText($TargetSecurityFile, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Ok "Generated random tokens in $TargetSecurityFile."
+} else {
+    $jsonOut = $ExistingSecurityJson | ConvertTo-Json -Depth 4
+    [System.IO.File]::WriteAllText($TargetSecurityFile, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
+    $generatedApiKey = $ExistingSecurityJson.apiKeys[0]
+    $generatedBearer = if ($ExistingSecurityJson.bearerTokens -and $ExistingSecurityJson.bearerTokens.Count -gt 0) { $ExistingSecurityJson.bearerTokens[0] } else { "" }
+    Write-Ok "Preserved existing custom tokens in $TargetSecurityFile (use -RegenerateTokens to rotate)."
+}
 
 # 5. Compile WsusRestApi.dll directly using built-in .NET 4.8 csc.exe (zero dev tools needed)
 Write-Step "Compiling WsusRestApi.dll using built-in .NET Framework 4.8..."
@@ -200,4 +248,8 @@ Write-Host " WSUS REST API Base URL : http://$($env:COMPUTERNAME):$Port$AppPath/
 Write-Host " Health Endpoint        : $healthUrl" -ForegroundColor White
 Write-Host " API Security Config    : $InstallDir\Config\security.json" -ForegroundColor White
 Write-Host " WSUS Settings Config   : $InstallDir\Config\Wsus\wsus-settings.json" -ForegroundColor White
+Write-Host " X-Api-Key              : $generatedApiKey" -ForegroundColor Yellow
+if ($generatedBearer) {
+    Write-Host " Bearer Token           : $generatedBearer" -ForegroundColor Yellow
+}
 Write-Host "============================================================" -ForegroundColor Green

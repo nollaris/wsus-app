@@ -1,0 +1,13 @@
+{
+  "authEnabled": true,
+  "apiKeys": [
+    "wsus-readonly-api-key-change-me-2026"
+  ],
+  "bearerTokens": [
+    "wsus-readonly-bearer-token-change-me-2026"
+  ],
+  "allowedOrigins": [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+  ]
+}

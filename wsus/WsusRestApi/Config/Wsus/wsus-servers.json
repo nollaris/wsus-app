@@ -1,0 +1,29 @@
+[
+  {
+    "id": "wsus-hq",
+    "name": "WSUS Head Office",
+    "hostName": "wsus-hq.corp.local",
+    "port": 8530,
+    "useSsl": false,
+    "enabled": true,
+    "description": "Primary upstream WSUS server at Head Office"
+  },
+  {
+    "id": "wsus-dr",
+    "name": "WSUS Disaster Recovery",
+    "hostName": "wsus-dr.corp.local",
+    "port": 8531,
+    "useSsl": true,
+    "enabled": true,
+    "description": "Downstream replica WSUS server at DR site"
+  },
+  {
+    "id": "wsus-branch01",
+    "name": "WSUS Branch 01",
+    "hostName": "wsus-b01.corp.local",
+    "port": 8530,
+    "useSsl": false,
+    "enabled": false,
+    "description": "Branch office WSUS server (disabled until commissioned)"
+  }
+]

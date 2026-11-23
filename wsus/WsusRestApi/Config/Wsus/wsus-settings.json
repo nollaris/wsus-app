@@ -1,0 +1,5 @@
+{
+  "cacheDurationMinutes": 5,
+  "enableBackgroundRefresh": true,
+  "maxSyncHistoryItems": 50
+}

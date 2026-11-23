@@ -41,25 +41,13 @@ pnpm prisma db push
 
 ### 4. Seed the database
 
-Place your WSUS CSV export files inside a `data/` directory at the project root:
-
-- `data/Classifications.csv`
-- `data/Products.csv`
-- `data/Client_Status.csv`
-- `data/Patch_Inventory.csv`
-- `data/Client_Patch_Status.csv`
-- `data/Synchronization_History.csv`
-- `data/Synchronization_Settings.csv`
-
-Then run the seed script:
+Run the seed script to create the default administrator account (`admin` / `P@ssw0rd`):
 
 ```bash
 pnpm prisma db seed
 ```
 
-This creates the default administrator account (`admin` / `P@ssw0rd`) and imports the CSV data into PostgreSQL.
-
-> **Note:** Additional WSUS CSV/ZIP exports can also be uploaded from the `/import` page in the web UI after signing in.
+> **Note:** After signing in, upload your WSUS CSV/ZIP exports from the `/import` page in the web UI.
 
 ### 5. Run the development server
 

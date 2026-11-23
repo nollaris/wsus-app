@@ -28,6 +28,7 @@ import {
   TableRow,
 } from "@workspace/ui/components/ui/table";
 import { SortableTableHead, type SortDir } from "@/components/sortable-table-head";
+import { formatKbArticle } from "@/lib/format";
 
 export interface ClientPatchRow {
   id: number;
@@ -161,7 +162,7 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
         </div>
       </div>
 
-      <div className="rounded-md border bg-background">
+      <div className="rounded-md border bg-background min-w-0 overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -182,22 +183,13 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
             ) : (
               paginated.map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell className="max-w-md font-medium">
-                    <span className="line-clamp-2">{p.updateTitle}</span>
-                    {p.installationState === "Failed" &&
-                      (p.errorCode || p.errorMessage) && (
-                        <div className="mt-1 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
-                          {p.errorCode && (
-                            <span className="mr-1.5 font-mono font-semibold">
-                              [{p.errorCode}]
-                            </span>
-                          )}
-                          <span>{p.errorMessage ?? "Installation failed"}</span>
-                        </div>
-                      )}
+                  <TableCell className="max-w-md whitespace-normal font-medium">
+                    <span className="line-clamp-2" title={p.updateTitle}>
+                      {p.updateTitle}
+                    </span>
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    {p.kbArticle ? `KB${p.kbArticle}` : "-"}
+                    {formatKbArticle(p.kbArticle)}
                   </TableCell>
                   <TableCell className="text-xs">{p.classification}</TableCell>
                   <TableCell className="text-xs">{p.approvalAction}</TableCell>
@@ -285,7 +277,7 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
           if (!open) setSelectedFailure(null);
         }}
       >
-        <DialogContent>
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
               <AlertCircle className="h-5 w-5" />
@@ -301,9 +293,7 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
                 <div>
                   <div className="text-xs text-muted-foreground">KB Article</div>
                   <div className="font-mono font-medium">
-                    {selectedFailure.kbArticle
-                      ? `KB${selectedFailure.kbArticle}`
-                      : "-"}
+                    {formatKbArticle(selectedFailure.kbArticle)}
                   </div>
                 </div>
                 <div>

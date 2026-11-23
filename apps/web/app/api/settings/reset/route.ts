@@ -1,20 +1,7 @@
-import fs from "node:fs";
-import path from "node:path";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { canResetDatabase } from "@/lib/rbac";
-import { importCsvBuffer } from "@/lib/csv-importer";
-
-const DATA_FILES = [
-  "Classifications.csv",
-  "Products.csv",
-  "Client_Status.csv",
-  "Patch_Inventory.csv",
-  "Client_Patch_Status.csv",
-  "Synchronization_History.csv",
-  "Synchronization_Settings.csv",
-];
 
 async function getTableCounts() {
   const [
@@ -85,25 +72,6 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         action: "truncate",
-        counts: await getTableCounts(),
-      });
-    }
-
-    if (action === "reseed") {
-      const dataDir = path.join(process.cwd(), "data");
-      const results = [];
-      for (const file of DATA_FILES) {
-        const fullPath = path.join(dataDir, file);
-        if (fs.existsSync(fullPath)) {
-          const buf = fs.readFileSync(fullPath);
-          results.push(await importCsvBuffer(file, buf, "replace"));
-        }
-      }
-
-      return NextResponse.json({
-        ok: true,
-        action: "reseed",
-        results,
         counts: await getTableCounts(),
       });
     }

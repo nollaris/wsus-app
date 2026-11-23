@@ -23,6 +23,7 @@ import {
 } from "@workspace/ui/components/ui/table";
 import { Skeleton } from "@workspace/ui/components/ui/skeleton";
 import { SortableTableHead, type SortDir } from "@/components/sortable-table-head";
+import { formatKbArticle } from "@/lib/format";
 
 interface PatchInventoryItem {
   serverName: string;
@@ -326,7 +327,7 @@ export function PatchesBrowser({
                         </Link>
                       </TableCell>
                       <TableCell className="font-mono text-xs">
-                        {p.kbArticle ? `KB${p.kbArticle}` : "-"}
+                        {formatKbArticle(p.kbArticle)}
                       </TableCell>
                       <TableCell className="text-xs">{p.classification}</TableCell>
                       <TableCell>

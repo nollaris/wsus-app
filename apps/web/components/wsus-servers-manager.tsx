@@ -1,18 +1,16 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { canManageServers, canTriggerSync } from "@/lib/rbac";
+import type { SyncScope } from "@/lib/wsus-api-sync";
 import {
-  Activity,
   CheckCircle2,
-  KeyRound,
   Loader2,
   Plus,
-  Power,
   RefreshCw,
   Server,
-  Trash2,
   XCircle,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@workspace/ui/components/ui/alert";
@@ -74,11 +72,6 @@ export function WsusServersManager({
   );
   const [apiKey, setApiKey] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
-
-  const [editingApiKeyServer, setEditingApiKeyServer] =
-    React.useState<WsusServerItem | null>(null);
-  const [overwriteApiKey, setOverwriteApiKey] = React.useState("");
-  const [updatingKey, setUpdatingKey] = React.useState(false);
 
   const [startingSync, setStartingSync] = React.useState(false);
   const [testingId, setTestingId] = React.useState<number | null>(null);
@@ -155,51 +148,30 @@ export function WsusServersManager({
     }
   }
 
-  async function handleTest(server: WsusServerItem) {
-    setTestingId(server.id);
-    setFeedback(null);
-    try {
-      const res = await fetch(`/api/wsus-servers/${server.id}/test`, {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error ?? "Connection test failed");
-      }
-      setFeedback({
-        type: "success",
-        message: `Connected to ${server.name} (Status: ${data.health?.status ?? "Healthy"}).`,
-      });
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        message:
-          err instanceof Error
-            ? `${server.name}: ${err.message}`
-            : "Connection failed",
-      });
-    } finally {
-      setTestingId(null);
-    }
-  }
-
-  async function handleSync(serverId: number | "all") {
+  async function handleSync(
+    serverId: number | "all",
+    scope: SyncScope = "all"
+  ) {
     setStartingSync(true);
     setFeedback(null);
     try {
       const res = await fetch("/api/wsus-sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(serverId === "all" ? {} : { serverId }),
+        body: JSON.stringify(
+          serverId === "all" ? { scope } : { serverId, scope }
+        ),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error ?? "Failed to start synchronization");
       }
 
+      const scopeLabel =
+        scope === "all" ? "Full synchronization" : `Sync (${scope})`;
       setFeedback({
         type: "success",
-        message: "Synchronization started in background. Status will update automatically.",
+        message: `${scopeLabel} started in background. Status will update automatically.`,
       });
       await fetchLatestServers();
     } catch (err) {
@@ -209,70 +181,6 @@ export function WsusServersManager({
       });
     } finally {
       setStartingSync(false);
-    }
-  }
-
-  async function handleToggleEnabled(server: WsusServerItem) {
-    await fetch(`/api/wsus-servers/${server.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: !server.enabled }),
-    });
-    await refreshServers();
-  }
-
-  async function handleDelete(server: WsusServerItem) {
-    await fetch(`/api/wsus-servers/${server.id}`, { method: "DELETE" });
-    setFeedback({
-      type: "success",
-      message: `Removed WSUS server "${server.name}".`,
-    });
-    await refreshServers();
-  }
-
-  async function handleOverwriteApiKey(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingApiKeyServer) return;
-
-    const trimmedKey = overwriteApiKey.trim();
-    if (!trimmedKey) {
-      setFeedback({
-        type: "error",
-        message: "New API key is required.",
-      });
-      return;
-    }
-
-    setUpdatingKey(true);
-    setFeedback(null);
-
-    try {
-      const res = await fetch(`/api/wsus-servers/${editingApiKeyServer.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: trimmedKey }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error ?? "Failed to update API key");
-      }
-
-      const serverName = editingApiKeyServer.name;
-      setEditingApiKeyServer(null);
-      setOverwriteApiKey("");
-      setFeedback({
-        type: "success",
-        message: `Overwrote API key for "${serverName}".`,
-      });
-      await refreshServers();
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        message:
-          err instanceof Error ? err.message : "Failed to update API key",
-      });
-    } finally {
-      setUpdatingKey(false);
     }
   }
 
@@ -409,7 +317,6 @@ export function WsusServersManager({
                   <TableHead>API Base URL</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last Synced</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -417,7 +324,12 @@ export function WsusServersManager({
                   <TableRow key={srv.id}>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
-                        <span>{srv.name}</span>
+                        <Link
+                          href={`/sync/${srv.id}`}
+                          className="hover:underline text-primary"
+                        >
+                          {srv.name}
+                        </Link>
                         {!srv.enabled && (
                           <Badge variant="outline" className="text-xs">
                             Disabled
@@ -471,88 +383,6 @@ export function WsusServersManager({
                           })
                         : "-"}
                     </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {allowSync && (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={testingId === srv.id}
-                              onClick={() => handleTest(srv)}
-                              title="Test /health connection"
-                            >
-                              {testingId === srv.id ? (
-                                <Loader2 className="size-3.5 animate-spin" />
-                              ) : (
-                                <Activity className="size-3.5" />
-                              )}
-                              <span className="ml-1 hidden sm:inline">Test</span>
-                            </Button>
-                            <Button
-                              size="sm"
-                              disabled={
-                                !srv.enabled ||
-                                startingSync ||
-                                srv.lastStatus === "Syncing"
-                              }
-                              onClick={() => handleSync(srv.id)}
-                            >
-                              {srv.lastStatus === "Syncing" ? (
-                                <Loader2 className="size-3.5 animate-spin" />
-                              ) : (
-                                <RefreshCw className="size-3.5" />
-                              )}
-                              <span className="ml-1">
-                                {srv.lastStatus === "Syncing" ? "Syncing" : "Sync"}
-                              </span>
-                            </Button>
-                          </>
-                        )}
-                        {allowManage && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => {
-                                setOverwriteApiKey("");
-                                setEditingApiKeyServer(srv);
-                              }}
-                              title="Overwrite API key"
-                            >
-                              <KeyRound className="size-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleToggleEnabled(srv)}
-                              title={srv.enabled ? "Disable" : "Enable"}
-                            >
-                              <Power
-                                className={`size-4 ${
-                                  srv.enabled
-                                    ? "text-emerald-600"
-                                    : "text-muted-foreground"
-                                }`}
-                              />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDelete(srv)}
-                              title="Remove server"
-                            >
-                              <Trash2 className="size-4 text-destructive" />
-                            </Button>
-                          </>
-                        )}
-                        {!allowSync && !allowManage && (
-                          <span className="text-xs text-muted-foreground">
-                            Read-only
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -560,68 +390,6 @@ export function WsusServersManager({
           </div>
         )}
       </CardContent>
-
-      {/* Overwrite API Key Dialog (never displays existing key) */}
-      <Dialog
-        open={Boolean(editingApiKeyServer)}
-        onOpenChange={(open) => {
-          if (!open && !updatingKey) {
-            setEditingApiKeyServer(null);
-            setOverwriteApiKey("");
-          }
-        }}
-      >
-        <DialogContent>
-          <form onSubmit={handleOverwriteApiKey}>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <KeyRound className="size-4" />
-                Overwrite API Key: {editingApiKeyServer?.name}
-              </DialogTitle>
-              <DialogDescription>
-                For security, the existing API key is never displayed. Enter a
-                new key to overwrite it.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="overwrite-wsus-key">
-                  New API Key (X-Api-Key)
-                </Label>
-                <Input
-                  id="overwrite-wsus-key"
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder="Enter new API key..."
-                  value={overwriteApiKey}
-                  onChange={(e) => setOverwriteApiKey(e.target.value)}
-                  required
-                  disabled={updatingKey}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setEditingApiKeyServer(null);
-                  setOverwriteApiKey("");
-                }}
-                disabled={updatingKey}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={updatingKey}>
-                {updatingKey && (
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                )}
-                Overwrite Key
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </Card>
   );
 }

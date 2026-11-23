@@ -1,5 +1,22 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { dedupePatchInventory } from "@/lib/patch-dedupe";
+
+export const SYNC_SCOPES = [
+  "all",
+  "computers",
+  "updates",
+  "sync",
+  "client-patches",
+] as const;
+export type SyncScope = (typeof SYNC_SCOPES)[number];
+
+export function isValidSyncScope(value: unknown): value is SyncScope {
+  return (
+    typeof value === "string" &&
+    (SYNC_SCOPES as readonly string[]).includes(value)
+  );
+}
 
 const globalForSync = globalThis as unknown as {
   activeWsusSyncs?: Set<number>;
@@ -139,81 +156,145 @@ export async function testWsusServerConnection(server: {
   return res.data;
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (true) {
+      const idx = nextIndex++;
+      if (idx >= items.length) break;
+      results[idx] = await worker(items[idx]!, idx);
+    }
+  }
+
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return results;
+}
+
 async function fetchAllPages<T>(
   server: { baseUrl: string; apiKey: string },
   resourcePath: string
 ): Promise<T[]> {
-  const items: T[] = [];
-  let page = 1;
   const pageSize = 500;
+  const sep = resourcePath.includes("?") ? "&" : "?";
+  const firstRes = await fetchFromWsus<T[]>(
+    server,
+    `${resourcePath}${sep}page=1&pageSize=${pageSize}`
+  );
 
-  while (true) {
-    const sep = resourcePath.includes("?") ? "&" : "?";
-    const res = await fetchFromWsus<T[]>(
-      server,
-      `${resourcePath}${sep}page=${page}&pageSize=${pageSize}`
-    );
-    items.push(...res.data);
-
-    const pagination = res.meta?.pagination;
-    if (!pagination || page >= pagination.totalPages) {
-      break;
-    }
-    page++;
+  const items: T[] = [...firstRes.data];
+  const totalPages = firstRes.meta?.pagination?.totalPages ?? 1;
+  if (totalPages <= 1) {
+    return items;
   }
 
+  const remainingPages = Array.from(
+    { length: totalPages - 1 },
+    (_, i) => i + 2
+  );
+  const pageResults = await mapWithConcurrency(
+    remainingPages,
+    6,
+    async (page) => {
+      const res = await fetchFromWsus<T[]>(
+        server,
+        `${resourcePath}${sep}page=${page}&pageSize=${pageSize}`
+      );
+      return res.data;
+    }
+  );
+
+  for (const pageItems of pageResults) {
+    items.push(...pageItems);
+  }
   return items;
 }
 
 async function fetchComputerDetailsInBatches(
   server: { baseUrl: string; apiKey: string },
   computers: RemoteComputer[],
-  batchSize = 6
+  concurrency = 16
 ): Promise<RemoteComputerDetail[]> {
-  const details: RemoteComputerDetail[] = [];
-  for (let i = 0; i < computers.length; i += batchSize) {
-    const batch = computers.slice(i, i + batchSize);
-    const results = await Promise.all(
-      batch.map(async (c) => {
-        try {
-          const res = await fetchFromWsus<RemoteComputerDetail>(
-            server,
-            `/computers/${encodeURIComponent(c.computerId)}`
-          );
-          return res.data;
-        } catch {
-          return null;
-        }
-      })
-    );
-    for (const item of results) {
-      if (item) details.push(item);
+  const results = await mapWithConcurrency(computers, concurrency, async (c) => {
+    try {
+      const res = await fetchFromWsus<RemoteComputerDetail>(
+        server,
+        `/computers/${encodeURIComponent(c.computerId)}`
+      );
+      return res.data;
+    } catch {
+      return null;
     }
-  }
-  return details;
+  });
+
+  return results.filter((item): item is RemoteComputerDetail => item !== null);
 }
 
-export async function syncWsusServerById(serverId: number) {
+export async function syncWsusServerById(
+  serverId: number,
+  scope: SyncScope = "all"
+) {
   const server = await prisma.wsusServer.findUnique({ where: { id: serverId } });
   if (!server) {
     throw new Error("WSUS server not found");
   }
 
+  const syncComputers = scope === "all" || scope === "computers";
+  const syncUpdates = scope === "all" || scope === "updates";
+  const syncOverview = scope === "all" || scope === "sync";
+  const syncClientPatches = scope === "all" || scope === "client-patches";
+
   const startedAt = Date.now();
   try {
     const [computers, updates, syncRes] = await Promise.all([
-      fetchAllPages<RemoteComputer>(server, "/computers"),
-      fetchAllPages<RemoteUpdate>(server, "/updates"),
-      fetchFromWsus<RemoteSyncOverview>(server, "/sync?limit=50"),
+      syncComputers || syncClientPatches
+        ? fetchAllPages<RemoteComputer>(server, "/computers")
+        : Promise.resolve([] as RemoteComputer[]),
+      syncUpdates
+        ? fetchAllPages<RemoteUpdate>(server, "/updates")
+        : Promise.resolve([] as RemoteUpdate[]),
+      syncOverview
+        ? fetchFromWsus<RemoteSyncOverview>(server, "/sync?limit=50")
+        : Promise.resolve(null),
     ]);
 
-    const computerDetails = await fetchComputerDetailsInBatches(server, computers);
+    const computerDetails = syncClientPatches
+      ? await fetchComputerDetailsInBatches(server, computers)
+      : [];
+
     const updateApprovalMap = new Map<string, string>();
-    for (const u of updates) {
-      updateApprovalMap.set(
-        `${u.updateId}:${u.revisionNumber}`,
-        u.isDeclined ? "Declined" : u.isApproved ? "Install" : "NotApproved"
-      );
+    if (syncClientPatches) {
+      if (syncUpdates) {
+        for (const u of updates) {
+          updateApprovalMap.set(
+            `${u.updateId}:${u.revisionNumber}`,
+            u.isDeclined ? "Declined" : u.isApproved ? "Install" : "NotApproved"
+          );
+        }
+      } else {
+        const existingUpdates = await prisma.patchInventory.findMany({
+          where: { serverName: server.name },
+          select: {
+            updateId: true,
+            revisionNumber: true,
+            isApproved: true,
+            isDeclined: true,
+          },
+        });
+        for (const u of existingUpdates) {
+          updateApprovalMap.set(
+            `${u.updateId}:${u.revisionNumber}`,
+            u.isDeclined ? "Declined" : u.isApproved ? "Install" : "NotApproved"
+          );
+        }
+      }
     }
 
     const clientPatchRows: Array<{
@@ -267,33 +348,34 @@ export async function syncWsusServerById(serverId: number) {
 
     await prisma.$transaction(async (tx) => {
       // 1. Replace ClientStatus for this server
-      await tx.clientStatus.deleteMany({ where: { serverName } });
-      if (computers.length > 0) {
-        await tx.clientStatus.createMany({
-          data: computers.map((c) => ({
-            serverName,
-            computerTargetId: c.computerId,
-            computerName: c.fullDomainName,
-            ipAddress: c.ipAddress ?? "",
-            osDescription: c.osDescription ?? "Unknown",
-            osVersion: c.osVersion ?? null,
-            clientVersion: c.clientVersion ?? "",
-            computerRole: c.computerRole ?? "Workstation",
-            requestedTargetGroup: c.requestedTargetGroup ?? null,
-            assignedTargetGroups: (c.assignedTargetGroups ?? []).join(", "),
-            lastSyncTime: c.lastSyncTimeUtc ? new Date(c.lastSyncTimeUtc) : null,
-            lastReportedStatusTime: c.lastReportedStatusTimeUtc
-              ? new Date(c.lastReportedStatusTimeUtc)
-              : null,
-          })),
-        });
+      if (syncComputers) {
+        await tx.clientStatus.deleteMany({ where: { serverName } });
+        if (computers.length > 0) {
+          await tx.clientStatus.createMany({
+            data: computers.map((c) => ({
+              serverName,
+              computerTargetId: c.computerId,
+              computerName: c.fullDomainName,
+              ipAddress: c.ipAddress ?? "",
+              osDescription: c.osDescription ?? "Unknown",
+              osVersion: c.osVersion ?? null,
+              clientVersion: c.clientVersion ?? "",
+              computerRole: c.computerRole ?? "Workstation",
+              requestedTargetGroup: c.requestedTargetGroup ?? null,
+              assignedTargetGroups: (c.assignedTargetGroups ?? []).join(", "),
+              lastSyncTime: c.lastSyncTimeUtc ? new Date(c.lastSyncTimeUtc) : null,
+              lastReportedStatusTime: c.lastReportedStatusTimeUtc
+                ? new Date(c.lastReportedStatusTimeUtc)
+                : null,
+            })),
+          });
+        }
       }
 
-      // 2. Replace PatchInventory for this server
-      await tx.patchInventory.deleteMany({ where: { serverName } });
-      if (updates.length > 0) {
-        await tx.patchInventory.createMany({
-          data: updates.map((u) => ({
+      // 2. Replace PatchInventory for this server (deduplicated by updateId & title)
+      if (syncUpdates) {
+        const dedupedUpdates = dedupePatchInventory(
+          updates.map((u) => ({
             serverName,
             updateId: u.updateId,
             revisionNumber: u.revisionNumber,
@@ -310,67 +392,81 @@ export async function syncWsusServerById(serverId: number) {
             isLatestRevision: Boolean(u.isLatestRevision),
             updateType: u.updateType ?? "Software",
             description: "",
-          })),
-        });
+          }))
+        );
+
+        await tx.patchInventory.deleteMany({ where: { serverName } });
+        if (dedupedUpdates.length > 0) {
+          await tx.patchInventory.createMany({
+            data: dedupedUpdates,
+            skipDuplicates: true,
+          });
+        }
       }
 
       // 3. Upsert SynchronizationSetting
-      const s = syncRes.data.settings;
-      if (s) {
-        const perDay = s.numberOfSynchronizationsPerDay || 1;
-        await tx.synchronizationSetting.upsert({
-          where: { serverName },
-          create: {
-            serverName,
-            synchronizeAutomatically: Boolean(s.synchronizeAutomatically),
-            synchronizationTimeUtc: s.synchronizationTimeOfDayUtc ?? "00:00:00",
-            synchronizationTimeLocal: s.synchronizationTimeOfDayUtc ?? "00:00:00",
-            syncPerDay: perDay,
-            intervalHours: Math.max(1, Math.round(24 / perDay)),
-            lastModifiedBy: "WSUS API Sync",
-            lastModifiedTime: new Date(),
-          },
-          update: {
-            synchronizeAutomatically: Boolean(s.synchronizeAutomatically),
-            synchronizationTimeUtc: s.synchronizationTimeOfDayUtc ?? "00:00:00",
-            synchronizationTimeLocal: s.synchronizationTimeOfDayUtc ?? "00:00:00",
-            syncPerDay: perDay,
-            intervalHours: Math.max(1, Math.round(24 / perDay)),
-            lastModifiedBy: "WSUS API Sync",
-            lastModifiedTime: new Date(),
-          },
-        });
+      if (syncOverview && syncRes) {
+        const s = syncRes.data.settings;
+        if (s) {
+          const perDay = s.numberOfSynchronizationsPerDay || 1;
+          await tx.synchronizationSetting.upsert({
+            where: { serverName },
+            create: {
+              serverName,
+              synchronizeAutomatically: Boolean(s.synchronizeAutomatically),
+              synchronizationTimeUtc: s.synchronizationTimeOfDayUtc ?? "00:00:00",
+              synchronizationTimeLocal: s.synchronizationTimeOfDayUtc ?? "00:00:00",
+              syncPerDay: perDay,
+              intervalHours: Math.max(1, Math.round(24 / perDay)),
+              lastModifiedBy: "WSUS API Sync",
+              lastModifiedTime: new Date(),
+            },
+            update: {
+              synchronizeAutomatically: Boolean(s.synchronizeAutomatically),
+              synchronizationTimeUtc: s.synchronizationTimeOfDayUtc ?? "00:00:00",
+              synchronizationTimeLocal: s.synchronizationTimeOfDayUtc ?? "00:00:00",
+              syncPerDay: perDay,
+              intervalHours: Math.max(1, Math.round(24 / perDay)),
+              lastModifiedBy: "WSUS API Sync",
+              lastModifiedTime: new Date(),
+            },
+          });
+        }
       }
 
       // 4. Replace ClientPatchStatus for this server (in chunks to avoid parameter limits)
-      await tx.clientPatchStatus.deleteMany({ where: { serverName } });
-      const chunkSize = 1000;
-      for (let i = 0; i < clientPatchRows.length; i += chunkSize) {
-        await tx.clientPatchStatus.createMany({
-          data: clientPatchRows.slice(i, i + chunkSize),
-        });
+      if (syncClientPatches) {
+        await tx.clientPatchStatus.deleteMany({ where: { serverName } });
+        const chunkSize = 2500;
+        for (let i = 0; i < clientPatchRows.length; i += chunkSize) {
+          await tx.clientPatchStatus.createMany({
+            data: clientPatchRows.slice(i, i + chunkSize),
+          });
+        }
       }
 
       // 5. Replace SynchronizationHistory for this server
-      const history = syncRes.data.history ?? [];
-      await tx.synchronizationHistory.deleteMany({ where: { serverName } });
-      if (history.length > 0) {
-        await tx.synchronizationHistory.createMany({
-          data: history.map((h) => ({
-            serverName,
-            synchronizationId: h.synchronizationId,
-            startTime: h.startTimeUtc ? new Date(h.startTimeUtc) : null,
-            endTime: h.endTimeUtc ? new Date(h.endTimeUtc) : null,
-            result: h.result ?? "Unknown",
-            startedManually: Boolean(h.startedManually),
-            updateErrors:
-              h.updateErrorsCount && h.updateErrorsCount > 0
-                ? `${h.updateErrorsCount} error(s)`
-                : null,
-            error: h.error ?? null,
-            errorText: h.errorText ?? null,
-          })),
-        });
+      if (syncOverview && syncRes) {
+        const history = syncRes.data.history ?? [];
+        await tx.synchronizationHistory.deleteMany({ where: { serverName } });
+        if (history.length > 0) {
+          await tx.synchronizationHistory.createMany({
+            data: history.map((h) => ({
+              serverName,
+              synchronizationId: h.synchronizationId,
+              startTime: h.startTimeUtc ? new Date(h.startTimeUtc) : null,
+              endTime: h.endTimeUtc ? new Date(h.endTimeUtc) : null,
+              result: h.result ?? "Unknown",
+              startedManually: Boolean(h.startedManually),
+              updateErrors:
+                h.updateErrorsCount && h.updateErrorsCount > 0
+                  ? `${h.updateErrorsCount} error(s)`
+                  : null,
+              error: h.error ?? null,
+              errorText: h.errorText ?? null,
+            })),
+          });
+        }
       }
     });
 
@@ -386,9 +482,10 @@ export async function syncWsusServerById(serverId: number) {
     return {
       serverId: server.id,
       serverName: server.name,
+      scope,
       computersCount: computers.length,
       updatesCount: updates.length,
-      syncHistoryCount: syncRes.data.history?.length ?? 0,
+      syncHistoryCount: syncRes?.data.history?.length ?? 0,
       durationMs: Date.now() - startedAt,
     };
   } catch (err) {
@@ -404,7 +501,10 @@ export async function syncWsusServerById(serverId: number) {
   }
 }
 
-export async function startBackgroundSync(serverIds: number[]) {
+export async function startBackgroundSync(
+  serverIds: number[],
+  scope: SyncScope = "all"
+) {
   const toStart = serverIds.filter((id) => !activeWsusSyncs.has(id));
   if (toStart.length === 0) {
     return { startedIds: [] as number[], alreadyRunningIds: serverIds };
@@ -417,7 +517,7 @@ export async function startBackgroundSync(serverIds: number[]) {
 
   for (const id of toStart) {
     activeWsusSyncs.add(id);
-    void syncWsusServerById(id)
+    void syncWsusServerById(id, scope)
       .then(() => {
         try {
           revalidatePath("/", "layout");

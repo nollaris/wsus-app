@@ -30,7 +30,16 @@ export async function PATCH(
     data.name = body.name.trim();
   }
   if (typeof body?.baseUrl === "string" && body.baseUrl.trim()) {
-    data.baseUrl = body.baseUrl.trim().replace(/\/+$/, "");
+    const normalizedUrl = body.baseUrl.trim().replace(/\/+$/, "");
+    try {
+      new URL(normalizedUrl);
+    } catch {
+      return NextResponse.json(
+        { error: "Base URL must be a valid URL." },
+        { status: 400 }
+      );
+    }
+    data.baseUrl = normalizedUrl;
   }
   if (typeof body?.apiKey === "string") {
     const trimmedKey = body.apiKey.trim();

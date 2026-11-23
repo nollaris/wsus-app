@@ -45,9 +45,6 @@ importers:
       '@workspace/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      adm-zip:
-        specifier: ^0.6.1
-        version: 0.6.1
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
@@ -57,9 +54,6 @@ importers:
       cn:
         specifier: ^0.5.2
         version: 0.5.2
-      csv-parse:
-        specifier: ^7.0.3
-        version: 7.0.3
       jose:
         specifier: ^6.2.18
         version: 6.2.18
@@ -94,9 +88,6 @@ importers:
       '@tailwindcss/turbopack':
         specifier: 4.3.3
         version: 4.3.3
-      '@types/adm-zip':
-        specifier: ^0.5.8
-        version: 0.5.8
       '@types/bcryptjs':
         specifier: ^2.4.6
         version: 2.4.6
@@ -1170,9 +1161,6 @@ packages:
     cpu: [arm64]
     os: [win32]
 
-  '@types/adm-zip@0.5.8':
-    resolution: {integrity: sha512-RVVH7QvZYbN+ihqZ4kX/dMiowf6o+Jk1fNwiSdx0NahBJLU787zkULhGhJM8mf/obmLGmgdMM0bXsQTmyfbR7Q==}
-
   '@types/bcryptjs@2.4.6':
     resolution: {integrity: sha512-9xlo6R2qDs5uixm0bcIqCeMCE6HiQsIyel9KQySStiyqNl2tnj2mP3DX1Nf56MD6KMenNNlBBsy3LJ7gUEQPXQ==}
 
@@ -1494,10 +1482,6 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  adm-zip@0.6.1:
-    resolution: {integrity: sha512-Xwrja8nx9e5o2N1my4DsKCeKpdrnACyr1wtbPxBDgGzKzKyE9kRtBFA8mWldI+RVlD7CBZNWY/wQ2+ydwOR6kQ==}
-    engines: {node: '>=14.0'}
-
   ajv-formats@2.1.1:
     resolution: {integrity: sha512-Wx0Kx52hxE7C18hkMEggYlEifqWZtYaRgouJor+WMdPnQyEK13vgEWyVNup7SoeeoLMsr4kf5h6dOW11I15MUA==}
     peerDependencies:
@@ -1728,9 +1712,6 @@ packages:
 
   csstype@3.2.4:
     resolution: {integrity: sha512-PoKaoPzQapnEoqUSnHx1u6W6ku8CVEgKsnpmmzU3m1nwkidpPBQ8V/Zq2+bWNrsOKoKLwTGdbx6xF7BXP1zLVQ==}
-
-  csv-parse@7.0.3:
-    resolution: {integrity: sha512-YFd3QM/yo17vH91L1IOZuvl09zM0zEEtdfTcOCKWcMdM++MNaQSyp09slXyFCLaPXvHstQFx/xC8myiFHSMUvw==}
 
   d3-array@3.2.1:
     resolution: {integrity: sha512-gUY/qeHq/yNqqoCKNq4vtpFLdoCdvyNpWoC/KNjhGbhDuQpAM9sIQQKkXSNpXa9h5KySs/gzm7R88WkUutgwWQ==}
@@ -4591,10 +4572,6 @@ snapshots:
   '@turbo/windows-arm64@2.11.13':
     optional: true
 
-  '@types/adm-zip@0.5.8':
-    dependencies:
-      '@types/node': 20.19.43
-
   '@types/bcryptjs@2.4.6': {}
 
   '@types/d3-array@3.0.3': {}
@@ -4924,8 +4901,6 @@ snapshots:
 
   acorn@8.19.0: {}
 
-  adm-zip@0.6.1: {}
-
   ajv-formats@2.1.1(ajv@8.20.0):
     optionalDependencies:
       ajv: 8.20.0
@@ -5176,8 +5151,6 @@ snapshots:
       which: 2.0.2
 
   csstype@3.2.4: {}
-
-  csv-parse@7.0.3: {}
 
   d3-array@3.2.1:
     dependencies:

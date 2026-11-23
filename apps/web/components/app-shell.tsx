@@ -31,6 +31,7 @@ function getPageLabel(pathname: string): string {
   if (pathname.startsWith("/clients/")) return "Client Details";
   if (pathname === "/patches") return "Patches";
   if (pathname === "/sync") return "Sync & Servers";
+  if (pathname.startsWith("/sync/")) return "Server Control";
   if (pathname === "/users") return "Users & RBAC";
   if (pathname === "/settings") return "Settings";
   return "Overview";

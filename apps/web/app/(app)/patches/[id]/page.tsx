@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { formatKbArticle } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@workspace/ui/components/ui/card";
 import { Badge } from "@workspace/ui/components/ui/badge";
 import { PatchClientsTable } from "@/components/patch-clients-table";
@@ -103,7 +104,7 @@ export default async function PatchDetailPage({
             <h1 className="text-2xl font-bold tracking-tight">{patch.title}</h1>
             <p className="text-sm text-muted-foreground">
               {patch.kbArticle ? (
-                <span className="font-mono">KB{patch.kbArticle} &middot; </span>
+                <span className="font-mono">{formatKbArticle(patch.kbArticle)} &middot; </span>
               ) : null}
               {patch.classification} &middot;{" "}
               <span className="font-mono text-xs">{patch.updateId}</span>

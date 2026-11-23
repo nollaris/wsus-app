@@ -9,7 +9,6 @@ import {
   Moon,
   Monitor,
   Database,
-  RotateCcw,
   Trash2,
   User,
   LogOut,
@@ -64,9 +63,7 @@ export function SettingsPanel({ user, initialCounts }: SettingsPanelProps) {
   );
 
   const [counts, setCounts] = useState<TableCounts>(initialCounts);
-  const [dialogAction, setDialogAction] = useState<"truncate" | "reseed" | null>(
-    null
-  );
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{
@@ -75,14 +72,14 @@ export function SettingsPanel({ user, initialCounts }: SettingsPanelProps) {
   } | null>(null);
 
   async function handleResetConfirm() {
-    if (!dialogAction) return;
+    if (!dialogOpen) return;
     setBusy(true);
     setFeedback(null);
     try {
       const res = await fetch("/api/settings/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: dialogAction, confirmText }),
+        body: JSON.stringify({ action: "truncate", confirmText }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -95,12 +92,9 @@ export function SettingsPanel({ user, initialCounts }: SettingsPanelProps) {
       if (data.counts) setCounts(data.counts);
       setFeedback({
         type: "success",
-        message:
-          dialogAction === "truncate"
-            ? "All WSUS tables have been cleared."
-            : "Database successfully re-seeded from data/*.csv files.",
+        message: "All WSUS tables have been cleared.",
       });
-      setDialogAction(null);
+      setDialogOpen(false);
       setConfirmText("");
       router.refresh();
     } catch {
@@ -218,8 +212,7 @@ export function SettingsPanel({ user, initialCounts }: SettingsPanelProps) {
             Database Management &amp; Reset
           </CardTitle>
           <CardDescription>
-            Inspect PostgreSQL table row counts, re-seed from{" "}
-            <code>data/*.csv</code>, or clear all WSUS records (admin user
+            Inspect PostgreSQL table row counts or clear all WSUS records (user
             accounts are preserved).
           </CardDescription>
         </CardHeader>
@@ -240,30 +233,17 @@ export function SettingsPanel({ user, initialCounts }: SettingsPanelProps) {
 
           <div className="flex flex-wrap items-center gap-3 pt-2">
             {canResetDatabase(user.role) ? (
-              <>
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => {
-                    setConfirmText("");
-                    setDialogAction("reseed");
-                  }}
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Re-seed from data/ CSVs
-                </Button>
-                <Button
-                  variant="destructive"
-                  className="gap-2"
-                  onClick={() => {
-                    setConfirmText("");
-                    setDialogAction("truncate");
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Clear All WSUS Data
-                </Button>
-              </>
+              <Button
+                variant="destructive"
+                className="gap-2"
+                onClick={() => {
+                  setConfirmText("");
+                  setDialogOpen(true);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear All WSUS Data
+              </Button>
             ) : (
               <p className="text-xs text-muted-foreground">
                 Database reset controls require an <span className="font-semibold">Admin</span> role.
@@ -275,25 +255,20 @@ export function SettingsPanel({ user, initialCounts }: SettingsPanelProps) {
 
       {/* Confirmation Dialog */}
       <Dialog
-        open={Boolean(dialogAction)}
+        open={dialogOpen}
         onOpenChange={(open) => {
           if (!open && !busy) {
-            setDialogAction(null);
+            setDialogOpen(false);
             setConfirmText("");
           }
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {dialogAction === "reseed"
-                ? "Re-seed Database from CSVs?"
-                : "Clear All WSUS Data?"}
-            </DialogTitle>
+            <DialogTitle>Clear All WSUS Data?</DialogTitle>
             <DialogDescription>
-              {dialogAction === "reseed"
-                ? "This will replace all 7 WSUS tables with the CSV files currently in the data/ folder. User accounts will not be affected."
-                : "This will permanently delete all rows from all 7 WSUS data tables in PostgreSQL. User accounts will be preserved."}
+              This will permanently delete all rows from all 7 WSUS data tables
+              in PostgreSQL. User accounts will be preserved.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
@@ -312,21 +287,17 @@ export function SettingsPanel({ user, initialCounts }: SettingsPanelProps) {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setDialogAction(null)}
+              onClick={() => setDialogOpen(false)}
               disabled={busy}
             >
               Cancel
             </Button>
             <Button
-              variant={dialogAction === "truncate" ? "destructive" : "default"}
+              variant="destructive"
               disabled={confirmText.trim() !== "RESET" || busy}
               onClick={handleResetConfirm}
             >
-              {busy
-                ? "Processing..."
-                : dialogAction === "reseed"
-                  ? "Confirm Re-seed"
-                  : "Confirm Clear"}
+              {busy ? "Processing..." : "Confirm Clear"}
             </Button>
           </DialogFooter>
         </DialogContent>

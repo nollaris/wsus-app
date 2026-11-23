@@ -15,6 +15,7 @@ import {
   Save,
   ShieldAlert,
   Trash2,
+  X,
   XCircle,
 } from "lucide-react";
 import { canManageServers, canTriggerSync } from "@/lib/rbac";
@@ -137,23 +138,37 @@ export function WsusServerControl({
 
   const refreshServer = React.useCallback(async () => {
     const res = await fetch("/api/wsus-servers", { cache: "no-store" });
-    if (!res.ok) return;
+    if (!res.ok) return null;
     const data = (await res.json()) as { servers?: WsusServerDetailItem[] };
     const found = (data.servers ?? []).find((s) => s.id === server.id);
     if (found) {
       setServer(found);
+      return found;
     }
+    return null;
   }, [server.id]);
 
   React.useEffect(() => {
     if (!isSyncing) return;
     const timer = window.setInterval(() => {
-      void refreshServer().then(() => {
-        router.refresh();
+      void refreshServer().then((found) => {
+        if (found && found.lastStatus !== "Syncing") {
+          React.startTransition(() => {
+            router.refresh();
+          });
+        }
       });
     }, 3000);
     return () => window.clearInterval(timer);
   }, [isSyncing, refreshServer, router]);
+
+  React.useEffect(() => {
+    if (!feedback || feedback.type !== "success") return;
+    const timer = window.setTimeout(() => {
+      setFeedback(null);
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
 
   async function handleTest() {
     setTesting(true);
@@ -198,7 +213,9 @@ export function WsusServerControl({
         message: `Started ${scope === "all" ? "full synchronization" : `${scope} sync`} in background.`,
       });
       await refreshServer();
-      router.refresh();
+      React.startTransition(() => {
+        router.refresh();
+      });
     } catch (err) {
       setFeedback({
         type: "error",
@@ -339,16 +356,27 @@ export function WsusServerControl({
   return (
     <div className="space-y-6">
       {feedback && (
-        <Alert
-          variant={feedback.type === "error" ? "destructive" : "default"}
-        >
-          {feedback.type === "success" ? (
-            <CheckCircle2 className="size-4" />
-          ) : (
-            <XCircle className="size-4" />
-          )}
-          <AlertDescription>{feedback.message}</AlertDescription>
-        </Alert>
+        <div className="fixed bottom-4 right-4 z-50 w-[calc(100%-2rem)] max-w-md">
+          <Alert
+            variant={feedback.type === "error" ? "destructive" : "default"}
+            className="pr-9 shadow-lg"
+          >
+            {feedback.type === "success" ? (
+              <CheckCircle2 className="size-4" />
+            ) : (
+              <XCircle className="size-4" />
+            )}
+            <AlertDescription>{feedback.message}</AlertDescription>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="absolute top-2.5 right-2.5 rounded-sm p-0.5 text-muted-foreground opacity-70 transition-opacity hover:opacity-100"
+              aria-label="Dismiss notification"
+            >
+              <X className="size-3.5" />
+            </button>
+          </Alert>
+        </div>
       )}
 
       {server.lastStatus === "Failed" && server.lastError && (

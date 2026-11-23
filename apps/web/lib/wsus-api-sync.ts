@@ -402,6 +402,61 @@ export async function syncWsusServerById(
             skipDuplicates: true,
           });
         }
+
+        // Derive subscribed Products & Classifications from synced updates
+        const productDates = new Map<string, { title: string; arrivalDate: Date | null }>();
+        const classificationDates = new Map<string, { title: string; arrivalDate: Date | null }>();
+
+        for (const u of updates) {
+          const arrivalDate = u.arrivalDateUtc ? new Date(u.arrivalDateUtc) : null;
+
+          for (const rawProduct of u.products ?? []) {
+            const title = rawProduct.trim();
+            if (!title) continue;
+            const key = title.toLowerCase();
+            const existing = productDates.get(key);
+            if (!existing || (arrivalDate && (!existing.arrivalDate || arrivalDate > existing.arrivalDate))) {
+              productDates.set(key, { title, arrivalDate });
+            }
+          }
+
+          const classTitle = (u.classification ?? "").trim() || "Other";
+          const classKey = classTitle.toLowerCase();
+          const existingClass = classificationDates.get(classKey);
+          if (!existingClass || (arrivalDate && (!existingClass.arrivalDate || arrivalDate > existingClass.arrivalDate))) {
+            classificationDates.set(classKey, { title: classTitle, arrivalDate });
+          }
+        }
+
+        await tx.product.deleteMany({ where: { serverName } });
+        if (productDates.size > 0) {
+          await tx.product.createMany({
+            data: Array.from(productDates.entries()).map(([categoryId, info]) => ({
+              serverName,
+              categoryId,
+              title: info.title,
+              type: "Product",
+              description: "",
+              arrivalDate: info.arrivalDate,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        await tx.classification.deleteMany({ where: { serverName } });
+        if (classificationDates.size > 0) {
+          await tx.classification.createMany({
+            data: Array.from(classificationDates.entries()).map(([classificationId, info]) => ({
+              serverName,
+              classificationId,
+              title: info.title,
+              description: "",
+              arrivalDate: info.arrivalDate,
+              releaseNotes: null,
+            })),
+            skipDuplicates: true,
+          });
+        }
       }
 
       // 3. Upsert SynchronizationSetting

@@ -5,7 +5,7 @@ Read-only REST API designed to be installed on each **WSUS Server**. It connects
 ## Key Features
 
 - **Local WSUS Only**: Connects solely to the WSUS service on the host where it is installed.
-- **Zero Dev Tools & No PowerShell Required**: Uses built-in Windows Server `.NET Framework 4.8` (`csc.exe`), IIS `appcmd.exe`, and `Microsoft.UpdateServices.Administration.dll` directly—no Visual Studio, MSBuild, NuGet, or PowerShell required.
+- **Zero Dev Tools & No PowerShell Required**: Uses built-in Windows Server `.NET Framework 4.8` (`csc.exe`), IIS `Microsoft.Web.Administration.dll`, and `Microsoft.UpdateServices.Administration.dll` directly—no Visual Studio, MSBuild, NuGet, or PowerShell required.
 - **Non-Colliding Port 8530 Hosting**: Installs as an IIS sub-application at `/wsus-api` under the `WSUS Administration` site with an isolated AppPool (`WsusRestApiPool`), avoiding collisions with built-in WSUS endpoints.
 - **5-Minute Refresh & Caching**: `MemoryCache` with a 5-minute TTL and a 5-minute background refresh interval.
 - **Strictly Read-Only**: Allows only `GET`, `HEAD`, and `OPTIONS` requests and runs under the `WSUS Reporters` group.

@@ -32,6 +32,7 @@ echo [*] Preparing native .NET 4.8 installer (no PowerShell required)...
     /r:"%DOTNET_DIR%\System.Core.dll" ^
     /r:"%DOTNET_DIR%\System.Xml.dll" ^
     /r:"%DOTNET_DIR%\System.Web.Extensions.dll" ^
+    /r:"%DOTNET_DIR%\Microsoft.CSharp.dll" ^
     "%INSTALLER_SRC%"
 
 if %errorlevel% neq 0 (

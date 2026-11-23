@@ -10,7 +10,6 @@ using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
-using System.Xml;
 
 namespace WsusRestApiInstaller
 {
@@ -243,12 +242,12 @@ namespace WsusRestApiInstaller
                 throw new DirectoryNotFoundException("Application folder not found: " + opts.SourceDir);
             }
 
-            // 2. Verify IIS appcmd.exe, WSUS API DLL, and .NET Framework 4.8 csc.exe
-            WriteStep("Checking IIS (appcmd.exe), WSUS API DLL, and .NET Framework 4.8...");
-            string appCmdExe = Path.Combine(Environment.SystemDirectory, @"inetsrv\appcmd.exe");
-            if (!File.Exists(appCmdExe))
+            // 2. Verify IIS Microsoft.Web.Administration.dll, WSUS API DLL, and .NET Framework 4.8 csc.exe
+            WriteStep("Checking IIS (Microsoft.Web.Administration.dll), WSUS API DLL, and .NET Framework 4.8...");
+            string iisMwaDll = Path.Combine(Environment.SystemDirectory, @"inetsrv\Microsoft.Web.Administration.dll");
+            if (!File.Exists(iisMwaDll))
             {
-                throw new FileNotFoundException("IIS appcmd.exe not found at '" + appCmdExe + "'. Ensure IIS Management Tools are installed.");
+                throw new FileNotFoundException("IIS Microsoft.Web.Administration.dll not found at '" + iisMwaDll + "'. Ensure IIS Management Tools are installed.");
             }
 
             string wsusApiDll = @"C:\Program Files\Update Services\Api\Microsoft.UpdateServices.Administration.dll";
@@ -263,7 +262,7 @@ namespace WsusRestApiInstaller
             {
                 throw new FileNotFoundException(".NET Framework 4.8 compiler not found at '" + cscExe + "'.");
             }
-            WriteOk("Found IIS appcmd.exe, WSUS API DLL, and .NET Framework 4.8 runtime.");
+            WriteOk("Found IIS Microsoft.Web.Administration.dll, WSUS API DLL, and .NET Framework 4.8 runtime.");
 
             // 3. Deploy runtime config & Global.asax to InstallDir
             WriteStep("Deploying runtime files to " + opts.InstallDir + "...");
@@ -362,41 +361,61 @@ namespace WsusRestApiInstaller
             }
             WriteOk("Compiled " + outDll + ".");
 
+            Assembly mwa = Assembly.LoadFrom(iisMwaDll);
+            Type serverManagerType = mwa.GetType("Microsoft.Web.Administration.ServerManager", true);
+            Type pipelineModeType = mwa.GetType("Microsoft.Web.Administration.ManagedPipelineMode", true);
+            Type identityTypeEnum = mwa.GetType("Microsoft.Web.Administration.ProcessModelIdentityType", true);
+
             // 5. Locate target IIS Site
             WriteStep("Locating IIS site '" + opts.SiteName + "' (Port " + opts.Port + ")...");
-            string resolvedSiteName = ResolveSiteName(appCmdExe, opts.SiteName, opts.Port);
-            WriteOk("Target IIS site: '" + resolvedSiteName + "'");
-
-            // 6. Collision check against existing WSUS endpoints
-            foreach (string reserved in WsusReservedPaths)
+            string resolvedSiteName;
+            using (var sm = (IDisposable)Activator.CreateInstance(serverManagerType))
             {
-                if (string.Equals(reserved, opts.AppPath, StringComparison.OrdinalIgnoreCase))
+                dynamic dsm = sm;
+                dynamic targetSite = FindIisSite(dsm, opts.SiteName, opts.Port);
+                if (targetSite == null)
                 {
-                    throw new InvalidOperationException("AppPath '" + opts.AppPath + "' collides with a built-in WSUS endpoint!");
+                    throw new InvalidOperationException("Could not find IIS site '" + opts.SiteName + "' or any site bound to port " + opts.Port + ".");
                 }
-            }
+                resolvedSiteName = (string)targetSite.Name;
+                WriteOk("Target IIS site: '" + resolvedSiteName + "'");
 
-            if (VirtualDirectoryExists(appCmdExe, resolvedSiteName, opts.AppPath))
-            {
-                throw new InvalidOperationException("Virtual directory '" + opts.AppPath + "' already exists under '" + resolvedSiteName + "'. Choose a different AppPath.");
-            }
+                // 6. Collision check against existing WSUS endpoints
+                foreach (string reserved in WsusReservedPaths)
+                {
+                    if (string.Equals(reserved, opts.AppPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException("AppPath '" + opts.AppPath + "' collides with a built-in WSUS endpoint!");
+                    }
+                }
 
-            // 7. Create isolated 64-bit .NET v4.0 AppPool
-            WriteStep("Configuring isolated AppPool '" + opts.AppPoolName + "'...");
-            CommandResult poolCheck = RunProcess(appCmdExe, "list apppool " + QuoteArg(opts.AppPoolName));
-            if (poolCheck.ExitCode != 0 || string.IsNullOrEmpty(poolCheck.StdOut.Trim()))
-            {
-                RunProcessChecked(appCmdExe, "add apppool /name:" + QuoteArg(opts.AppPoolName));
+                if (RootVirtualDirectoryExists(targetSite, opts.AppPath))
+                {
+                    throw new InvalidOperationException("Virtual directory '" + opts.AppPath + "' already exists under '" + resolvedSiteName + "'. Choose a different AppPath.");
+                }
+
+                // 7. Create isolated 64-bit .NET v4.0 AppPool
+                WriteStep("Configuring isolated AppPool '" + opts.AppPoolName + "'...");
+                dynamic pool = null;
+                foreach (dynamic p in dsm.ApplicationPools)
+                {
+                    if (string.Equals((string)p.Name, opts.AppPoolName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        pool = p;
+                        break;
+                    }
+                }
+                if (pool == null)
+                {
+                    pool = dsm.ApplicationPools.Add(opts.AppPoolName);
+                }
+                pool.ManagedRuntimeVersion = "v4.0";
+                pool.ManagedPipelineMode = (dynamic)Enum.Parse(pipelineModeType, "Integrated");
+                pool.Enable32BitAppOnWin64 = false;
+                pool.ProcessModel.IdentityType = (dynamic)Enum.Parse(identityTypeEnum, "ApplicationPoolIdentity");
+                dsm.CommitChanges();
+                WriteOk("AppPool '" + opts.AppPoolName + "' configured.");
             }
-            RunProcessChecked(
-                appCmdExe,
-                "set apppool " + QuoteArg(opts.AppPoolName) +
-                " /managedRuntimeVersion:v4.0" +
-                " /managedPipelineMode:Integrated" +
-                " /enable32BitAppOnWin64:false" +
-                " /processModel.identityType:ApplicationPoolIdentity"
-            );
-            WriteOk("AppPool '" + opts.AppPoolName + "' configured.");
 
             // 8. Add AppPool identity to local "WSUS Reporters" group
             string appPoolIdentity = @"IIS AppPool\" + opts.AppPoolName;
@@ -411,24 +430,55 @@ namespace WsusRestApiInstaller
 
             // 10. Create or update IIS Application
             WriteStep("Registering IIS Application '" + opts.AppPath + "' under '" + resolvedSiteName + "'...");
-            string appFullName = resolvedSiteName + opts.AppPath;
-            CommandResult appCheck = RunProcess(appCmdExe, "list app " + QuoteArg(appFullName));
-            if (appCheck.ExitCode == 0 && !string.IsNullOrEmpty(appCheck.StdOut.Trim()))
+            using (var sm = (IDisposable)Activator.CreateInstance(serverManagerType))
             {
-                RunProcessChecked(appCmdExe, "set app " + QuoteArg(appFullName) + " /applicationPool:" + QuoteArg(opts.AppPoolName));
-                RunProcessChecked(appCmdExe, "set vdir " + QuoteArg(appFullName + "/") + " /physicalPath:" + QuoteArg(opts.InstallDir));
-                WriteOk("Updated existing IIS Application '" + opts.AppPath + "'.");
-            }
-            else
-            {
-                RunProcessChecked(
-                    appCmdExe,
-                    "add app /site.name:" + QuoteArg(resolvedSiteName) +
-                    " /path:" + QuoteArg(opts.AppPath) +
-                    " /physicalPath:" + QuoteArg(opts.InstallDir)
-                );
-                RunProcessChecked(appCmdExe, "set app " + QuoteArg(appFullName) + " /applicationPool:" + QuoteArg(opts.AppPoolName));
-                WriteOk("Created IIS Application '" + opts.AppPath + "'.");
+                dynamic dsm = sm;
+                dynamic targetSite = FindIisSite(dsm, resolvedSiteName, opts.Port);
+                if (targetSite == null)
+                {
+                    throw new InvalidOperationException("IIS site '" + resolvedSiteName + "' disappeared before application registration.");
+                }
+
+                dynamic existingApp = null;
+                foreach (dynamic app in targetSite.Applications)
+                {
+                    if (string.Equals((string)app.Path, opts.AppPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        existingApp = app;
+                        break;
+                    }
+                }
+
+                if (existingApp != null)
+                {
+                    existingApp.ApplicationPoolName = opts.AppPoolName;
+                    dynamic rootVdir = null;
+                    foreach (dynamic v in existingApp.VirtualDirectories)
+                    {
+                        if (string.Equals((string)v.Path, "/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            rootVdir = v;
+                            break;
+                        }
+                    }
+                    if (rootVdir != null)
+                    {
+                        rootVdir.PhysicalPath = opts.InstallDir;
+                    }
+                    else
+                    {
+                        existingApp.VirtualDirectories.Add("/", opts.InstallDir);
+                    }
+                    dsm.CommitChanges();
+                    WriteOk("Updated existing IIS Application '" + opts.AppPath + "'.");
+                }
+                else
+                {
+                    dynamic newApp = targetSite.Applications.Add(opts.AppPath, opts.InstallDir);
+                    newApp.ApplicationPoolName = opts.AppPoolName;
+                    dsm.CommitChanges();
+                    WriteOk("Created IIS Application '" + opts.AppPath + "'.");
+                }
             }
 
             // 11. Verify health endpoint
@@ -451,56 +501,46 @@ namespace WsusRestApiInstaller
             WriteColorLine(ConsoleColor.Green, "============================================================");
         }
 
-        private static string ResolveSiteName(string appCmdExe, string preferredName, int port)
+        private static dynamic FindIisSite(dynamic serverManager, string preferredName, int port)
         {
-            CommandResult byName = RunProcess(appCmdExe, "list site " + QuoteArg(preferredName));
-            if (byName.ExitCode == 0 && !string.IsNullOrEmpty(byName.StdOut.Trim()))
+            foreach (dynamic site in serverManager.Sites)
             {
-                return preferredName;
+                if (string.Equals((string)site.Name, preferredName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return site;
+                }
             }
 
-            CommandResult allSites = RunProcessChecked(appCmdExe, "list site /xml");
-            var doc = new XmlDocument();
-            doc.LoadXml(allSites.StdOut);
-            XmlNodeList nodes = doc.SelectNodes("//SITE");
             string portToken = ":" + port + ":";
-            if (nodes != null)
+            foreach (dynamic site in serverManager.Sites)
             {
-                foreach (XmlNode node in nodes)
+                foreach (dynamic binding in site.Bindings)
                 {
-                    if (node.Attributes == null) continue;
-                    XmlAttribute bindingsAttr = node.Attributes["bindings"];
-                    XmlAttribute nameAttr = node.Attributes["SITE.NAME"];
-                    if (bindingsAttr != null && nameAttr != null && bindingsAttr.Value.IndexOf(portToken, StringComparison.OrdinalIgnoreCase) >= 0)
+                    string bindingInfo = (string)binding.BindingInformation;
+                    if (bindingInfo != null && bindingInfo.IndexOf(portToken, StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        return nameAttr.Value;
+                        return site;
                     }
                 }
             }
 
-            throw new InvalidOperationException("Could not find IIS site '" + preferredName + "' or any site bound to port " + port + ".");
+            return null;
         }
 
-        private static bool VirtualDirectoryExists(string appCmdExe, string siteName, string appPath)
+        private static bool RootVirtualDirectoryExists(dynamic site, string appPath)
         {
-            CommandResult vdirs = RunProcess(appCmdExe, "list vdir /app.name:" + QuoteArg(siteName + "/") + " /xml");
-            if (vdirs.ExitCode != 0 || string.IsNullOrEmpty(vdirs.StdOut.Trim()))
+            foreach (dynamic app in site.Applications)
             {
-                return false;
-            }
-
-            var doc = new XmlDocument();
-            doc.LoadXml(vdirs.StdOut);
-            XmlNodeList nodes = doc.SelectNodes("//VDIR");
-            if (nodes == null) return false;
-
-            foreach (XmlNode node in nodes)
-            {
-                if (node.Attributes == null) continue;
-                XmlAttribute pathAttr = node.Attributes["path"];
-                if (pathAttr != null && string.Equals(pathAttr.Value, appPath, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals((string)app.Path, "/", StringComparison.OrdinalIgnoreCase))
                 {
-                    return true;
+                    foreach (dynamic vdir in app.VirtualDirectories)
+                    {
+                        if (string.Equals((string)vdir.Path, appPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
+                    break;
                 }
             }
             return false;

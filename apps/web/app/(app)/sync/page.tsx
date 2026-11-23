@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { SyncHistoryTable } from "@/components/sync-history-table";
 import { WsusServersManager } from "@/components/wsus-servers-manager";
 import {
   Card,
@@ -76,17 +75,78 @@ function ServerBadges({ servers }: { servers: string[] }) {
 }
 
 export default async function SyncCatalogPage() {
-  const [session, wsusServers, settingsList, history, products, classifications] =
+  const [session, wsusServers, products, classifications] =
     await Promise.all([
       getSession(),
       prisma.wsusServer.findMany({ orderBy: { name: "asc" } }),
-      prisma.synchronizationSetting.findMany({ orderBy: { serverName: "asc" } }),
-      prisma.synchronizationHistory.findMany({
-        orderBy: { startTime: "desc" },
-      }),
       prisma.product.findMany({ orderBy: { title: "asc" } }),
       prisma.classification.findMany({ orderBy: { title: "asc" } }),
     ]);
+
+  let resolvedProducts = products;
+  let resolvedClassifications = classifications;
+
+  if (resolvedProducts.length === 0 || resolvedClassifications.length === 0) {
+    const patchRows = await prisma.patchInventory.findMany({
+      select: { serverName: true, products: true, classification: true },
+      distinct: ["serverName", "products", "classification"],
+    });
+
+    if (resolvedProducts.length === 0) {
+      const derivedProducts = new Map<
+        string,
+        { serverName: string; categoryId: string; title: string; type: string; description: string; arrivalDate: Date | null }
+      >();
+      for (const row of patchRows) {
+        if (!row.products) continue;
+        for (const raw of row.products.split(",")) {
+          const title = raw.trim();
+          if (!title) continue;
+          const categoryId = title.toLowerCase();
+          const mapKey = `${row.serverName}::${categoryId}`;
+          if (!derivedProducts.has(mapKey)) {
+            derivedProducts.set(mapKey, {
+              serverName: row.serverName,
+              categoryId,
+              title,
+              type: "Product",
+              description: "",
+              arrivalDate: null,
+            });
+          }
+        }
+      }
+      resolvedProducts = Array.from(derivedProducts.values()).sort((a, b) =>
+        a.title.localeCompare(b.title)
+      );
+    }
+
+    if (resolvedClassifications.length === 0) {
+      const derivedClassifications = new Map<
+        string,
+        { serverName: string; classificationId: string; title: string; description: string; arrivalDate: Date | null; releaseNotes: string | null }
+      >();
+      for (const row of patchRows) {
+        const title = row.classification.trim();
+        if (!title) continue;
+        const classificationId = title.toLowerCase();
+        const mapKey = `${row.serverName}::${classificationId}`;
+        if (!derivedClassifications.has(mapKey)) {
+          derivedClassifications.set(mapKey, {
+            serverName: row.serverName,
+            classificationId,
+            title,
+            description: "",
+            arrivalDate: null,
+            releaseNotes: null,
+          });
+        }
+      }
+      resolvedClassifications = Array.from(derivedClassifications.values()).sort((a, b) =>
+        a.title.localeCompare(b.title)
+      );
+    }
+  }
 
   const serializedServers = wsusServers.map((s) => ({
     id: s.id,
@@ -98,22 +158,11 @@ export default async function SyncCatalogPage() {
     lastError: s.lastError,
   }));
 
-  const groupedProducts = groupByKey(products, (p) => p.categoryId);
+  const groupedProducts = groupByKey(resolvedProducts, (p) => p.categoryId);
   const groupedClassifications = groupByKey(
-    classifications,
+    resolvedClassifications,
     (c) => c.classificationId
   );
-
-  const serializedHistory = history.map((h) => ({
-    serverName: h.serverName,
-    synchronizationId: h.synchronizationId,
-    startTime: h.startTime ? h.startTime.toISOString() : null,
-    endTime: h.endTime ? h.endTime.toISOString() : null,
-    result: h.result,
-    startedManually: h.startedManually,
-    error: h.error,
-    errorText: h.errorText,
-  }));
 
   return (
     <div className="space-y-6">
@@ -122,8 +171,8 @@ export default async function SyncCatalogPage() {
           Synchronization &amp; Servers
         </h1>
         <p className="text-muted-foreground">
-          Manage WSUS server API endpoints, pull live sync data, and review
-          synchronization history and catalog.
+          Manage WSUS server API endpoints, pull live sync data, and review the
+          update catalog.
         </p>
       </div>
 
@@ -131,66 +180,6 @@ export default async function SyncCatalogPage() {
         initialServers={serializedServers}
         userRole={session?.role ?? "viewer"}
       />
-
-      {/* Sync Settings */}
-      {settingsList.length > 0 && (
-        <div
-          className={
-            settingsList.length > 1
-              ? "grid gap-4 lg:grid-cols-2"
-              : "grid gap-4"
-          }
-        >
-          {settingsList.map((settings) => (
-            <Card key={settings.serverName}>
-              <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-                <div>
-                  <CardTitle>Synchronization Settings</CardTitle>
-                  <CardDescription className="mt-1">
-                    Server:{" "}
-                    <span className="font-mono">{settings.serverName}</span>
-                  </CardDescription>
-                </div>
-                <Badge
-                  variant="secondary"
-                  className={
-                    settings.synchronizeAutomatically
-                      ? "bg-emerald-500/15 text-emerald-700"
-                      : ""
-                  }
-                >
-                  {settings.synchronizeAutomatically
-                    ? "Auto Sync Enabled"
-                    : "Auto Sync Disabled"}
-                </Badge>
-              </CardHeader>
-              <CardContent className="grid gap-4 sm:grid-cols-3 text-sm">
-                <div>
-                  <div className="text-xs text-muted-foreground">Schedule</div>
-                  <div className="mt-1 font-mono text-xs sm:text-sm">
-                    {settings.synchronizationTimeLocal} Local (
-                    {settings.synchronizationTimeUtc} UTC)
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Frequency</div>
-                  <div className="mt-1">
-                    {settings.syncPerDay}x / day (every {settings.intervalHours}h)
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">
-                    Last Modified
-                  </div>
-                  <div className="mt-1 font-mono text-xs break-all">
-                    {settings.lastModifiedBy || "-"}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
 
       {/* Products & Classifications (grouped by item with server badges) */}
       <div className="grid gap-4 lg:grid-cols-2">
@@ -274,19 +263,6 @@ export default async function SyncCatalogPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Sync History */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Synchronization History ({history.length})</CardTitle>
-          <CardDescription>
-            Complete log of WSUS catalog sync runs
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <SyncHistoryTable rows={serializedHistory} />
-        </CardContent>
-      </Card>
     </div>
   );
 }

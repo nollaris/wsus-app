@@ -61,7 +61,7 @@ function LoginForm() {
           Sign in to access Windows Server Update Services telemetry
         </CardDescription>
       </CardHeader>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <CardContent className="space-y-4">
           {error && (
             <Alert variant="destructive">
@@ -76,7 +76,7 @@ function LoginForm() {
               <Input
                 id="username"
                 type="text"
-                placeholder="admin"
+                placeholder="Enter username"
                 className="pl-9"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -92,7 +92,7 @@ function LoginForm() {
               <Input
                 id="password"
                 type="password"
-                placeholder="••••••••"
+                placeholder="Enter password"
                 className="pl-9"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

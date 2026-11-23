@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { AppShell } from "@/components/app-shell";
@@ -14,5 +15,12 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  return <AppShell user={session}>{children}</AppShell>;
+  const cookieStore = await cookies();
+  const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
+
+  return (
+    <AppShell user={session} defaultSidebarOpen={defaultOpen}>
+      {children}
+    </AppShell>
+  );
 }

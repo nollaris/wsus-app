@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ClientComplianceCharts } from "@/components/client-compliance-charts";
 import { ClientPatchesTable } from "@/components/client-patches-table";
 
 export const instant = false;
@@ -98,6 +99,8 @@ export default async function ClientDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      <ClientComplianceCharts patches={patches} />
 
       <ClientPatchesTable patches={patches} />
     </div>

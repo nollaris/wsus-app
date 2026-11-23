@@ -1,17 +1,8 @@
 <#
 .SYNOPSIS
-    Installs WsusRestApi as an isolated IIS Application (/wsus-api) under the existing
-    "WSUS Administration" IIS site on Port 8530 without colliding with WSUS endpoints.
-
-.DESCRIPTION
-    - Verifies Administrator & IIS WebAdministration module
-    - Builds WsusRestApi (if bin\WsusRestApi.dll is not already present)
-    - Creates an isolated 64-bit .NET v4.0 AppPool (WsusRestApiPool)
-    - Adds the AppPool identity to local "WSUS Reporters" group (read-only WSUS access)
-    - Registers IIS Application "/wsus-api" under "WSUS Administration" (Port 8530)
-    - Verifies /wsus-api does not collide with existing WSUS virtual directories
-    - Grants write permissions on App_Data\Logs for NLog
-    - Runs a health check against http://localhost:8530/wsus-api/api/v1/health
+    Zero-dev-tool installer for WsusRestApi on a Production WSUS Server (Port 8530 /wsus-api).
+    Uses only built-in Windows Server .NET Framework 4.8 (csc.exe), IIS, and WSUS API DLLs.
+    No Visual Studio, MSBuild, or NuGet required.
 #>
 
 [CmdletBinding()]
@@ -44,11 +35,9 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 }
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectDir = Join-Path $ScriptRoot "WsusRestApi"
-$SolutionFile = Join-Path $ScriptRoot "WsusRestApi.sln"
-
-if (-not (Test-Path $ProjectDir)) {
-    throw "Project folder not found: $ProjectDir"
+$SourceDir = Join-Path $ScriptRoot "WsusRestApi"
+if (-not (Test-Path $SourceDir)) {
+    throw "Application folder not found: $SourceDir"
 }
 
 # 2. Load IIS module
@@ -58,73 +47,62 @@ if (-not (Get-Module -ListAvailable -Name WebAdministration)) {
 }
 Import-Module WebAdministration
 
-# 3. Ensure WSUS API DLL exists on host
+# 3. Verify WSUS API DLL and built-in .NET Framework 4.8 csc.exe
 $WsusApiDll = "C:\Program Files\Update Services\Api\Microsoft.UpdateServices.Administration.dll"
 if (-not (Test-Path $WsusApiDll)) {
-    throw "WSUS API DLL not found at '$WsusApiDll'. Run this installer on a WSUS Server or host with WSUS Administration Console installed."
-}
-Write-Ok "Found WSUS API DLL."
-
-# 4. Build project if bin\WsusRestApi.dll is missing
-$BuiltDll = Join-Path $ProjectDir "bin\WsusRestApi.dll"
-if (-not (Test-Path $BuiltDll)) {
-    Write-Step "Compiled binary not found. Attempting NuGet restore & MSBuild..."
-
-    $nuget = Get-Command nuget.exe -ErrorAction SilentlyContinue
-    if ($nuget) {
-        & $nuget.Source restore $SolutionFile
-        if ($LASTEXITCODE -ne 0) { throw "NuGet restore failed." }
-    } else {
-        Write-Warn "nuget.exe not found on PATH. Assuming packages\ is already restored."
-    }
-
-    $msbuildPaths = @(
-        "${env:ProgramFiles}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
-        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
-        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe",
-        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
-        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
-        "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\MSBuild.exe"
-    )
-    $msbuild = $msbuildPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-    if (-not $msbuild) {
-        throw "MSBuild.exe not found. Build WsusRestApi.sln in Visual Studio first or install Build Tools."
-    }
-
-    & $msbuild $SolutionFile /p:Configuration=Release /m
-    if ($LASTEXITCODE -ne 0) { throw "MSBuild failed." }
-    Write-Ok "Build succeeded."
-} else {
-    Write-Ok "Using existing compiled binaries in $ProjectDir\bin"
+    throw "WSUS API DLL not found at '$WsusApiDll'. Run this installer on a WSUS Server."
 }
 
-# 5. Copy application files to InstallDir (preserves existing Web.config / wsus-servers.json if already deployed? No, copies fresh & warns if needed)
-Write-Step "Deploying files to $InstallDir..."
-New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-
-$robocopyArgs = @(
-    $ProjectDir,
-    $InstallDir,
-    "/E",
-    "/XD", "obj", "Properties", ".vs",
-    "/XF", "*.cs", "*.csproj", "*.csproj.user"
-)
-& robocopy @robocopyArgs | Out-Null
-if ($LASTEXITCODE -ge 8) {
-    throw "Robocopy failed with exit code $LASTEXITCODE"
+$DotNetDir = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319"
+$CscExe = Join-Path $DotNetDir "csc.exe"
+if (-not (Test-Path $CscExe)) {
+    throw ".NET Framework 4.8 compiler not found at '$CscExe'."
 }
+Write-Ok "Found WSUS API DLL and .NET Framework 4.8 runtime."
 
+# 4. Deploy runtime config & Global.asax to InstallDir
+Write-Step "Deploying runtime files to $InstallDir..."
+$BinDir = Join-Path $InstallDir "bin"
 $LogsDir = Join-Path $InstallDir "App_Data\Logs"
+New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 New-Item -ItemType Directory -Path $LogsDir -Force | Out-Null
-Write-Ok "Files deployed to $InstallDir."
+
+Copy-Item -Path (Join-Path $SourceDir "Global.asax") -Destination $InstallDir -Force
+Copy-Item -Path (Join-Path $SourceDir "Web.config") -Destination $InstallDir -Force
+Copy-Item -Path (Join-Path $SourceDir "Config") -Destination $InstallDir -Recurse -Force
+
+# 5. Compile WsusRestApi.dll directly using built-in .NET 4.8 csc.exe (zero dev tools needed)
+Write-Step "Compiling WsusRestApi.dll using built-in .NET Framework 4.8..."
+$CsFiles = Get-ChildItem -Path $SourceDir -Recurse -Filter "*.cs" | ForEach-Object { $_.FullName }
+$OutDll = Join-Path $BinDir "WsusRestApi.dll"
+
+$cscArgs = @(
+    "/nologo",
+    "/target:library",
+    "/optimize+",
+    "/out:$OutDll",
+    "/r:$DotNetDir\System.dll",
+    "/r:$DotNetDir\System.Core.dll",
+    "/r:$DotNetDir\System.Configuration.dll",
+    "/r:$DotNetDir\System.Runtime.Caching.dll",
+    "/r:$DotNetDir\System.Web.dll",
+    "/r:$DotNetDir\System.Web.Extensions.dll",
+    "/r:$WsusApiDll"
+) + $CsFiles
+
+$cscOutput = & $CscExe @cscArgs 2>&1
+if ($LASTEXITCODE -ne 0) {
+    $cscOutput | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+    throw "Compilation failed with exit code $LASTEXITCODE."
+}
+Write-Ok "Compiled $OutDll."
 
 # 6. Locate target IIS Site (WSUS Administration on Port 8530)
 Write-Step "Locating IIS site '$SiteName' (Port $Port)..."
 $targetSite = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
 if (-not $targetSite) {
-    # Fallback: find any site bound to port 8530
     $targetSite = Get-Website | Where-Object {
-        $_.Bindings.Collection | Where-Object { $_.bindingInformation -match ":$Port:" }
+        $_.Bindings.Collection | Where-Object { $_.bindingInformation -match ":${Port}:" }
     } | Select-Object -First 1
 }
 
@@ -220,7 +198,6 @@ Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host " WSUS REST API Base URL : http://$($env:COMPUTERNAME):$Port$AppPath/api/v1" -ForegroundColor White
 Write-Host " Health Endpoint        : $healthUrl" -ForegroundColor White
-Write-Host " Next.js Config         : $InstallDir\Config\NextJs\nextjs-client.json" -ForegroundColor White
-Write-Host " WSUS Servers Config    : $InstallDir\Config\Wsus\wsus-servers.json" -ForegroundColor White
+Write-Host " API Security Config    : $InstallDir\Config\security.json" -ForegroundColor White
 Write-Host " WSUS Settings Config   : $InstallDir\Config\Wsus\wsus-settings.json" -ForegroundColor White
 Write-Host "============================================================" -ForegroundColor Green

@@ -1,1 +1,1 @@
-<%@ Application Codebehind="Global.asax.cs" Inherits="WsusRestApi.WebApiApplication" Language="C#" %>
+<%@ Application Inherits="WsusRestApi.WebApiApplication" Language="C#" %>

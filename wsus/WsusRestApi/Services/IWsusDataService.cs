@@ -1,26 +1,31 @@
 using System;
 using System.Collections.Generic;
-using WsusRestApi.Configuration;
 using WsusRestApi.Models;
 
 namespace WsusRestApi.Services
 {
-    public class WsusServerSnapshot
+    public class WsusLocalSnapshot
     {
-        public ServerStatusDto Status { get; set; }
+        public WsusLocalSnapshot()
+        {
+            Computers = new List<ComputerDto>();
+            Updates = new List<UpdateDto>();
+            Groups = new List<GroupDto>();
+        }
+
         public ServerSummaryDto Summary { get; set; }
-        public List<ComputerDto> Computers { get; set; } = new List<ComputerDto>();
-        public List<UpdateDto> Updates { get; set; } = new List<UpdateDto>();
-        public List<GroupDto> Groups { get; set; } = new List<GroupDto>();
+        public List<ComputerDto> Computers { get; set; }
+        public List<UpdateDto> Updates { get; set; }
+        public List<GroupDto> Groups { get; set; }
         public SyncOverviewDto Sync { get; set; }
         public DateTime CapturedAtUtc { get; set; }
     }
 
     public interface IWsusDataService
     {
-        WsusServerSnapshot FetchServerSnapshot(WsusServerConfig serverConfig);
-        ComputerDetailDto FetchComputerDetail(WsusServerConfig serverConfig, string computerId);
-        UpdateDetailDto FetchUpdateDetail(WsusServerConfig serverConfig, string updateId, int? revisionNumber = null);
-        GroupDetailDto FetchGroupDetail(WsusServerConfig serverConfig, string groupId);
+        WsusLocalSnapshot FetchLocalSnapshot();
+        ComputerDetailDto FetchComputerDetail(string computerId);
+        UpdateDetailDto FetchUpdateDetail(string updateId, int? revisionNumber = null);
+        GroupDetailDto FetchGroupDetail(string groupId);
     }
 }

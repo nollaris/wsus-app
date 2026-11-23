@@ -29,8 +29,7 @@ function getPageLabel(pathname: string): string {
   if (pathname === "/clients") return "Client Status";
   if (pathname.startsWith("/clients/")) return "Client Details";
   if (pathname === "/patches") return "Patches";
-  if (pathname === "/sync") return "Sync & Catalog";
-  if (pathname === "/import") return "Import Data";
+  if (pathname === "/sync") return "Sync & Servers";
   if (pathname === "/settings") return "Settings";
   return "Overview";
 }

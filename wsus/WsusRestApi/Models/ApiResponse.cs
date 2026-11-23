@@ -39,8 +39,13 @@ namespace WsusRestApi.Models
 
     public class ApiMeta
     {
+        public ApiMeta()
+        {
+            GeneratedAtUtc = DateTime.UtcNow;
+        }
+
         public string ServerId { get; set; }
-        public DateTime GeneratedAtUtc { get; set; } = DateTime.UtcNow;
+        public DateTime GeneratedAtUtc { get; set; }
         public DateTime? CachedAtUtc { get; set; }
         public DateTime? ExpiresAtUtc { get; set; }
         public bool FromCache { get; set; }
@@ -54,8 +59,8 @@ namespace WsusRestApi.Models
         public int PageSize { get; set; }
         public int TotalItems { get; set; }
         public int TotalPages { get; set; }
-        public bool HasNextPage => Page < TotalPages;
-        public bool HasPreviousPage => Page > 1;
+        public bool HasNextPage { get { return Page < TotalPages; } }
+        public bool HasPreviousPage { get { return Page > 1; } }
     }
 
     public class ApiError

@@ -16,7 +16,12 @@ namespace WsusRestApi.Models
 
     public class GroupDetailDto
     {
+        public GroupDetailDto()
+        {
+            Computers = new List<ComputerDto>();
+        }
+
         public GroupDto Group { get; set; }
-        public List<ComputerDto> Computers { get; set; } = new List<ComputerDto>();
+        public List<ComputerDto> Computers { get; set; }
     }
 }

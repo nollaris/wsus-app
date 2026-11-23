@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Concurrent;
-using System.Configuration;
 using System.Runtime.Caching;
 using System.Threading;
-using NLog;
 using WsusRestApi.Configuration;
 using WsusRestApi.Models;
 
@@ -17,128 +15,68 @@ namespace WsusRestApi.Services
         public bool FromCache { get; set; }
     }
 
-    /// <summary>
-    /// Thread-safe MemoryCache service with 5-minute TTL and per-key locking to prevent cache stampedes.
-    /// </summary>
     public sealed class WsusCacheService
     {
-        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         private static readonly Lazy<WsusCacheService> LazyInstance =
             new Lazy<WsusCacheService>(() => new WsusCacheService());
 
         private readonly ObjectCache _cache = MemoryCache.Default;
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks =
             new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, ServerStatusDto> _lastKnownStatuses =
-            new ConcurrentDictionary<string, ServerStatusDto>(StringComparer.OrdinalIgnoreCase);
 
-        public static WsusCacheService Instance => LazyInstance.Value;
-
-        public TimeSpan CacheDuration { get; }
+        public static WsusCacheService Instance { get { return LazyInstance.Value; } }
+        public TimeSpan CacheDuration { get; private set; }
+        public string LastError { get; private set; }
+        public DateTime? LastRefreshedUtc { get; private set; }
 
         private WsusCacheService()
         {
             int minutes = ApiConfigProvider.Instance.GetWsusSettings().CacheDurationMinutes;
-            if (minutes <= 0)
-            {
-                minutes = 5;
-            }
+            if (minutes <= 0) minutes = 5;
             CacheDuration = TimeSpan.FromMinutes(minutes);
         }
 
-        public CachedValue<WsusServerSnapshot> GetOrRefreshSnapshot(
-            WsusServerConfig server,
+        public CachedValue<WsusLocalSnapshot> GetOrRefreshSnapshot(
             IWsusDataService dataService,
             bool forceRefresh = false)
         {
-            string key = $"wsus:snapshot:{server.Id.ToLowerInvariant()}";
-            return GetOrAdd(key, () =>
+            return GetOrAdd("wsus:local:snapshot", () =>
             {
-                var snapshot = dataService.FetchServerSnapshot(server);
-                snapshot.Status.NextRefreshUtc = snapshot.CapturedAtUtc.Add(CacheDuration);
-                _lastKnownStatuses[server.Id] = snapshot.Status;
+                WsusLocalSnapshot snapshot = dataService.FetchLocalSnapshot();
+                LastRefreshedUtc = snapshot.CapturedAtUtc;
+                LastError = null;
                 return snapshot;
             }, forceRefresh);
         }
 
-        public void RecordServerError(WsusServerConfig server, Exception ex)
+        public void RecordError(Exception ex)
         {
-            _lastKnownStatuses.AddOrUpdate(
-                server.Id,
-                _ => new ServerStatusDto
-                {
-                    Id = server.Id,
-                    Name = server.Name,
-                    HostName = server.HostName,
-                    Port = server.Port,
-                    UseSsl = server.UseSsl,
-                    Enabled = server.Enabled,
-                    Description = server.Description,
-                    IsOnline = false,
-                    LastRefreshedUtc = null,
-                    NextRefreshUtc = DateTime.UtcNow.Add(CacheDuration),
-                    LastError = ex.Message
-                },
-                (_, existing) =>
-                {
-                    existing.IsOnline = false;
-                    existing.NextRefreshUtc = DateTime.UtcNow.Add(CacheDuration);
-                    existing.LastError = ex.Message;
-                    return existing;
-                });
+            LastError = ex.Message;
         }
 
-        public ServerStatusDto GetLastKnownStatus(WsusServerConfig server)
+        public CachedValue<ComputerDetailDto> GetOrRefreshComputerDetail(string computerId, IWsusDataService dataService)
         {
-            if (_lastKnownStatuses.TryGetValue(server.Id, out var status))
-                return status;
-
-            return new ServerStatusDto
-            {
-                Id = server.Id,
-                Name = server.Name,
-                HostName = server.HostName,
-                Port = server.Port,
-                UseSsl = server.UseSsl,
-                Enabled = server.Enabled,
-                Description = server.Description,
-                IsOnline = false,
-                LastError = server.Enabled ? "Not yet refreshed" : "Server disabled"
-            };
+            string key = string.Format("wsus:local:computer-detail:{0}", computerId.ToLowerInvariant());
+            return GetOrAdd(key, () => dataService.FetchComputerDetail(computerId));
         }
 
-        public CachedValue<ComputerDetailDto> GetOrRefreshComputerDetail(
-            WsusServerConfig server,
-            string computerId,
-            IWsusDataService dataService)
-        {
-            string key = $"wsus:computer-detail:{server.Id.ToLowerInvariant()}:{computerId.ToLowerInvariant()}";
-            return GetOrAdd(key, () => dataService.FetchComputerDetail(server, computerId));
-        }
-
-        public CachedValue<UpdateDetailDto> GetOrRefreshUpdateDetail(
-            WsusServerConfig server,
-            string updateId,
-            int? revisionNumber,
-            IWsusDataService dataService)
+        public CachedValue<UpdateDetailDto> GetOrRefreshUpdateDetail(string updateId, int? revisionNumber, IWsusDataService dataService)
         {
             string revPart = revisionNumber.HasValue ? revisionNumber.Value.ToString() : "latest";
-            string key = $"wsus:update-detail:{server.Id.ToLowerInvariant()}:{updateId.ToLowerInvariant()}:{revPart}";
-            return GetOrAdd(key, () => dataService.FetchUpdateDetail(server, updateId, revisionNumber));
+            string key = string.Format("wsus:local:update-detail:{0}:{1}", updateId.ToLowerInvariant(), revPart);
+            return GetOrAdd(key, () => dataService.FetchUpdateDetail(updateId, revisionNumber));
         }
 
-        public CachedValue<GroupDetailDto> GetOrRefreshGroupDetail(
-            WsusServerConfig server,
-            string groupId,
-            IWsusDataService dataService)
+        public CachedValue<GroupDetailDto> GetOrRefreshGroupDetail(string groupId, IWsusDataService dataService)
         {
-            string key = $"wsus:group-detail:{server.Id.ToLowerInvariant()}:{groupId.ToLowerInvariant()}";
-            return GetOrAdd(key, () => dataService.FetchGroupDetail(server, groupId));
+            string key = string.Format("wsus:local:group-detail:{0}", groupId.ToLowerInvariant());
+            return GetOrAdd(key, () => dataService.FetchGroupDetail(groupId));
         }
 
         private CachedValue<T> GetOrAdd<T>(string key, Func<T> factory, bool forceRefresh = false)
         {
-            if (!forceRefresh && _cache.Get(key) is CachedEnvelope<T> existing)
+            CachedEnvelope<T> existing = !forceRefresh ? (_cache.Get(key) as CachedEnvelope<T>) : null;
+            if (existing != null)
             {
                 return new CachedValue<T>
                 {
@@ -149,11 +87,12 @@ namespace WsusRestApi.Services
                 };
             }
 
-            var keyLock = _keyLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+            SemaphoreSlim keyLock = _keyLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
             keyLock.Wait();
             try
             {
-                if (!forceRefresh && _cache.Get(key) is CachedEnvelope<T> doubleChecked)
+                CachedEnvelope<T> doubleChecked = !forceRefresh ? (_cache.Get(key) as CachedEnvelope<T>) : null;
+                if (doubleChecked != null)
                 {
                     return new CachedValue<T>
                     {
@@ -165,12 +104,12 @@ namespace WsusRestApi.Services
                 }
 
                 T value = factory();
-                var now = DateTime.UtcNow;
-                var expires = now.Add(CacheDuration);
+                DateTime now = DateTime.UtcNow;
+                DateTime expires = now.Add(CacheDuration);
 
                 if (value != null)
                 {
-                    var envelope = new CachedEnvelope<T>
+                    CachedEnvelope<T> envelope = new CachedEnvelope<T>
                     {
                         Value = value,
                         CachedAtUtc = now,
@@ -180,7 +119,6 @@ namespace WsusRestApi.Services
                     {
                         AbsoluteExpiration = new DateTimeOffset(expires)
                     });
-                    Logger.Debug("Cached key '{0}' until {1:O}", key, expires);
                 }
 
                 return new CachedValue<T>

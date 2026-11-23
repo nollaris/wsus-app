@@ -135,3 +135,16 @@ model SynchronizationSetting {
   lastModifiedBy           String
   lastModifiedTime         DateTime?
 }
+
+model WsusServer {
+  id           Int       @id @default(autoincrement())
+  name         String
+  baseUrl      String    @unique
+  apiKey       String
+  enabled      Boolean   @default(true)
+  lastSyncedAt DateTime?
+  lastStatus   String?
+  lastError    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}

@@ -5,13 +5,18 @@ namespace WsusRestApi.Models
 {
     public class UpdateDto
     {
+        public UpdateDto()
+        {
+            Products = new List<string>();
+        }
+
         public string UpdateId { get; set; }
         public int RevisionNumber { get; set; }
         public string ServerId { get; set; }
         public string Title { get; set; }
         public string KbArticle { get; set; }
         public string Classification { get; set; }
-        public List<string> Products { get; set; } = new List<string>();
+        public List<string> Products { get; set; }
         public string MsrcSeverity { get; set; }
         public DateTime? ArrivalDateUtc { get; set; }
         public DateTime? CreationDateUtc { get; set; }
@@ -21,8 +26,6 @@ namespace WsusRestApi.Models
         public bool IsLatestRevision { get; set; }
         public string UpdateType { get; set; }
         public bool RequiresReboot { get; set; }
-
-        // Summary counts across computers
         public int InstalledCount { get; set; }
         public int NeededCount { get; set; }
         public int FailedCount { get; set; }
@@ -33,12 +36,20 @@ namespace WsusRestApi.Models
 
     public class UpdateDetailDto
     {
+        public UpdateDetailDto()
+        {
+            AdditionalInfoUrls = new List<string>();
+            SupersededByUpdateIds = new List<string>();
+            Approvals = new List<UpdateApprovalDto>();
+            ComputerStatuses = new List<UpdateComputerStatusDto>();
+        }
+
         public UpdateDto Update { get; set; }
         public string Description { get; set; }
-        public List<string> AdditionalInfoUrls { get; set; } = new List<string>();
-        public List<string> SupersededByUpdateIds { get; set; } = new List<string>();
-        public List<UpdateApprovalDto> Approvals { get; set; } = new List<UpdateApprovalDto>();
-        public List<UpdateComputerStatusDto> ComputerStatuses { get; set; } = new List<UpdateComputerStatusDto>();
+        public List<string> AdditionalInfoUrls { get; set; }
+        public List<string> SupersededByUpdateIds { get; set; }
+        public List<UpdateApprovalDto> Approvals { get; set; }
+        public List<UpdateComputerStatusDto> ComputerStatuses { get; set; }
     }
 
     public class UpdateApprovalDto

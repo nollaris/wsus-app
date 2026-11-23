@@ -5,11 +5,16 @@ namespace WsusRestApi.Models
 {
     public class SyncOverviewDto
     {
+        public SyncOverviewDto()
+        {
+            History = new List<SyncHistoryItemDto>();
+        }
+
         public string ServerId { get; set; }
         public string ServerName { get; set; }
         public SyncSettingsDto Settings { get; set; }
         public SyncStatusDto CurrentStatus { get; set; }
-        public List<SyncHistoryItemDto> History { get; set; } = new List<SyncHistoryItemDto>();
+        public List<SyncHistoryItemDto> History { get; set; }
     }
 
     public class SyncSettingsDto

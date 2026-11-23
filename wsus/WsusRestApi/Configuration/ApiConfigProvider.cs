@@ -3,58 +3,92 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Web.Hosting;
-using Newtonsoft.Json;
-using NLog;
+using WsusRestApi.Helpers;
 
 namespace WsusRestApi.Configuration
 {
-    public class NextJsClientConfig
+    public class ApiSecurityConfig
     {
-        public bool AuthEnabled { get; set; } = true;
-        public List<string> ApiKeys { get; set; } = new List<string>();
-        public List<string> BearerTokens { get; set; } = new List<string>();
-        public List<string> AllowedOrigins { get; set; } = new List<string> { "http://localhost:3000" };
+        public ApiSecurityConfig()
+        {
+            AuthEnabled = true;
+            ApiKeys = new List<string>();
+            BearerTokens = new List<string>();
+            AllowedOrigins = new List<string> { "*" };
+        }
+
+        public bool AuthEnabled { get; set; }
+        public List<string> ApiKeys { get; set; }
+        public List<string> BearerTokens { get; set; }
+        public List<string> AllowedOrigins { get; set; }
     }
 
     public class WsusSettingsConfig
     {
-        public int CacheDurationMinutes { get; set; } = 5;
-        public bool EnableBackgroundRefresh { get; set; } = true;
-        public int MaxSyncHistoryItems { get; set; } = 50;
+        public WsusSettingsConfig()
+        {
+            ServerId = string.Empty;
+            ServerName = string.Empty;
+            CacheDurationMinutes = 5;
+            EnableBackgroundRefresh = true;
+            MaxSyncHistoryItems = 50;
+        }
+
+        public string ServerId { get; set; }
+        public string ServerName { get; set; }
+        public int CacheDurationMinutes { get; set; }
+        public bool EnableBackgroundRefresh { get; set; }
+        public int MaxSyncHistoryItems { get; set; }
+
+        public string ResolvedServerId
+        {
+            get
+            {
+                return string.IsNullOrWhiteSpace(ServerId)
+                    ? Environment.MachineName.ToLowerInvariant()
+                    : ServerId.Trim();
+            }
+        }
+
+        public string ResolvedServerName
+        {
+            get
+            {
+                return string.IsNullOrWhiteSpace(ServerName)
+                    ? Environment.MachineName
+                    : ServerName.Trim();
+            }
+        }
     }
 
-    /// <summary>
-    /// Loads and hot-reloads separated configuration files from Config\NextJs and Config\Wsus.
-    /// </summary>
     public sealed class ApiConfigProvider
     {
-        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         private static readonly Lazy<ApiConfigProvider> LazyInstance =
             new Lazy<ApiConfigProvider>(() => new ApiConfigProvider());
 
-        private readonly object _nextJsLock = new object();
+        private readonly object _securityLock = new object();
         private readonly object _wsusLock = new object();
-        private readonly string _nextJsPath;
+        private readonly string _securityPath;
         private readonly string _wsusSettingsPath;
 
-        private DateTime _nextJsLastWriteUtc = DateTime.MinValue;
+        private DateTime _securityLastWriteUtc = DateTime.MinValue;
         private DateTime _wsusLastWriteUtc = DateTime.MinValue;
-        private NextJsClientConfig _nextJsConfig = new NextJsClientConfig();
+        private ApiSecurityConfig _securityConfig = new ApiSecurityConfig();
         private WsusSettingsConfig _wsusSettings = new WsusSettingsConfig();
 
-        public static ApiConfigProvider Instance => LazyInstance.Value;
+        public static ApiConfigProvider Instance { get { return LazyInstance.Value; } }
 
         private ApiConfigProvider()
         {
-            _nextJsPath = ResolvePath(
-                ConfigurationManager.AppSettings["NextJs:ConfigPath"] ?? @"Config\NextJs\nextjs-client.json");
+            _securityPath = ResolvePath(
+                ConfigurationManager.AppSettings["Api:SecurityConfigPath"] ?? @"Config\security.json");
             _wsusSettingsPath = ResolvePath(
                 ConfigurationManager.AppSettings["Wsus:SettingsPath"] ?? @"Config\Wsus\wsus-settings.json");
         }
 
-        public NextJsClientConfig GetNextJsConfig()
+        public ApiSecurityConfig GetSecurityConfig()
         {
-            return LoadOrReload(_nextJsPath, _nextJsLock, ref _nextJsLastWriteUtc, ref _nextJsConfig, "Next.js client config");
+            return LoadOrReload(_securityPath, _securityLock, ref _securityLastWriteUtc, ref _securityConfig, "API security config");
         }
 
         public WsusSettingsConfig GetWsusSettings()
@@ -82,7 +116,7 @@ namespace WsusRestApi.Configuration
             if (!File.Exists(path))
                 return current;
 
-            var writeTime = File.GetLastWriteTimeUtc(path);
+            DateTime writeTime = File.GetLastWriteTimeUtc(path);
             if (writeTime <= lastWriteUtc)
                 return current;
 
@@ -95,14 +129,14 @@ namespace WsusRestApi.Configuration
                 try
                 {
                     string json = File.ReadAllText(path);
-                    var parsed = JsonConvert.DeserializeObject<T>(json) ?? new T();
+                    T parsed = JsonHelper.Deserialize<T>(json) ?? new T();
                     current = parsed;
                     lastWriteUtc = writeTime;
-                    Logger.Info("Loaded {0} from {1}", label, path);
+                    FileLogger.Info(string.Format("Loaded {0} from {1}", label, path));
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error(ex, "Failed to load {0} from {1}", label, path);
+                    FileLogger.Error(string.Format("Failed to load {0} from {1}", label, path), ex);
                 }
                 return current;
             }

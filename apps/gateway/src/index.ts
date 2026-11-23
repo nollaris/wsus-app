@@ -14,7 +14,13 @@ app.use(
   cors({
     origin: allowedOrigin.split(",").map((o) => o.trim()),
     allowMethods: ["GET", "HEAD", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "X-Api-Key"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Api-Key",
+      "x-wsus-base-url",
+      "x-wsus-api-key",
+    ],
   })
 );
 

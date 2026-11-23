@@ -10,7 +10,6 @@ import {
   Settings2,
   ShieldAlert,
   ShieldCheck,
-  Upload,
 } from "lucide-react";
 import { NavUser } from "@/components/nav-user";
 import {
@@ -29,8 +28,7 @@ const NAV_ITEMS = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Client Status", url: "/clients", icon: Monitor },
   { title: "Patches", url: "/patches", icon: ShieldAlert },
-  { title: "Sync & Catalog", url: "/sync", icon: RefreshCw },
-  { title: "Import Data", url: "/import", icon: Upload },
+  { title: "Sync & Servers", url: "/sync", icon: RefreshCw },
   { title: "Settings", url: "/settings", icon: Settings2 },
 ];
 

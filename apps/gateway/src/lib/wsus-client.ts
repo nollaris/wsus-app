@@ -1,42 +1,32 @@
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
-const WSUS_API_BASE_URL = (
+const DEFAULT_BASE_URL = (
   process.env.WSUS_API_BASE_URL ?? "http://localhost:8530/wsus-api/api/v1"
 ).replace(/\/+$/, "");
 
-const WSUS_API_KEY =
+const DEFAULT_API_KEY =
   process.env.WSUS_API_KEY ?? "wsus-readonly-api-key-change-me-2026";
 
-const DEFAULT_SERVER_ID = process.env.WSUS_DEFAULT_SERVER_ID ?? "wsus-hq";
-
-export function resolveServerId(c: Context): string {
-  return c.req.query("serverId") || DEFAULT_SERVER_ID;
-}
-
-export function buildForwardedQuery(
-  c: Context,
-  excludeKeys: string[] = ["serverId"]
-): string {
+export function buildForwardedQuery(c: Context): string {
   const url = new URL(c.req.url);
-  const params = new URLSearchParams();
-  url.searchParams.forEach((value, key) => {
-    if (!excludeKeys.includes(key)) {
-      params.append(key, value);
-    }
-  });
-  const qs = params.toString();
+  const qs = url.searchParams.toString();
   return qs ? `?${qs}` : "";
 }
 
 export async function proxyWsusGet(c: Context, upstreamPath: string) {
-  const targetUrl = `${WSUS_API_BASE_URL}${upstreamPath}`;
+  const customBaseUrl = c.req.header("x-wsus-base-url")?.trim();
+  const customApiKey = c.req.header("x-wsus-api-key")?.trim();
+
+  const baseUrl = (customBaseUrl || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const apiKey = customApiKey || DEFAULT_API_KEY;
+  const targetUrl = `${baseUrl}${upstreamPath}`;
 
   try {
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: {
-        "X-Api-Key": WSUS_API_KEY,
+        "X-Api-Key": apiKey,
         Accept: "application/json",
       },
     });

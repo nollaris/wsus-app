@@ -7,7 +7,6 @@
     "wsus-readonly-bearer-token-change-me-2026"
   ],
   "allowedOrigins": [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000"
+    "*"
   ]
 }

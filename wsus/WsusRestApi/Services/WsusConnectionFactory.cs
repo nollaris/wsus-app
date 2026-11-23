@@ -1,26 +1,17 @@
-using System;
 using Microsoft.UpdateServices.Administration;
-using NLog;
-using WsusRestApi.Configuration;
+using WsusRestApi.Helpers;
 
 namespace WsusRestApi.Services
 {
     /// <summary>
-    /// Creates read-only connections to remote or local WSUS servers via AdminProxy.
+    /// Connects strictly to the local WSUS server on this host (no remoting).
     /// </summary>
     public sealed class WsusConnectionFactory
     {
-        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
-
-        public IUpdateServer Connect(WsusServerConfig config)
+        public IUpdateServer ConnectLocal()
         {
-            if (config == null)
-                throw new ArgumentNullException(nameof(config));
-
-            Logger.Debug("Connecting to WSUS server '{0}' ({1}:{2}, SSL={3})",
-                config.Id, config.HostName, config.Port, config.UseSsl);
-
-            return AdminProxy.GetUpdateServer(config.HostName, config.UseSsl, config.Port);
+            FileLogger.Info("Connecting to local WSUS server instance.");
+            return AdminProxy.GetUpdateServer();
         }
     }
 }

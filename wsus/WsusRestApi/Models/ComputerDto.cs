@@ -5,6 +5,11 @@ namespace WsusRestApi.Models
 {
     public class ComputerDto
     {
+        public ComputerDto()
+        {
+            AssignedTargetGroups = new List<string>();
+        }
+
         public string ComputerId { get; set; }
         public string ServerId { get; set; }
         public string FullDomainName { get; set; }
@@ -14,28 +19,34 @@ namespace WsusRestApi.Models
         public string ClientVersion { get; set; }
         public string ComputerRole { get; set; }
         public string RequestedTargetGroup { get; set; }
-        public List<string> AssignedTargetGroups { get; set; } = new List<string>();
+        public List<string> AssignedTargetGroups { get; set; }
         public DateTime? LastSyncTimeUtc { get; set; }
         public DateTime? LastReportedStatusTimeUtc { get; set; }
         public DateTime? LastReportedRebootTimeUtc { get; set; }
-
-        // Aggregated update status counts for this computer
         public int InstalledCount { get; set; }
         public int NeededCount { get; set; }
         public int FailedCount { get; set; }
         public int PendingRebootCount { get; set; }
         public int NotApplicableCount { get; set; }
         public int UnknownCount { get; set; }
-        public string ComplianceStatus { get; set; } // Compliant | Needed | Error | Stale
+        public string ComplianceStatus { get; set; }
     }
 
     public class ComputerDetailDto
     {
+        public ComputerDetailDto()
+        {
+            NeededUpdates = new List<ComputerUpdateStatusDto>();
+            FailedUpdates = new List<ComputerUpdateStatusDto>();
+            PendingRebootUpdates = new List<ComputerUpdateStatusDto>();
+            InstalledUpdates = new List<ComputerUpdateStatusDto>();
+        }
+
         public ComputerDto Computer { get; set; }
-        public List<ComputerUpdateStatusDto> NeededUpdates { get; set; } = new List<ComputerUpdateStatusDto>();
-        public List<ComputerUpdateStatusDto> FailedUpdates { get; set; } = new List<ComputerUpdateStatusDto>();
-        public List<ComputerUpdateStatusDto> PendingRebootUpdates { get; set; } = new List<ComputerUpdateStatusDto>();
-        public List<ComputerUpdateStatusDto> InstalledUpdates { get; set; } = new List<ComputerUpdateStatusDto>();
+        public List<ComputerUpdateStatusDto> NeededUpdates { get; set; }
+        public List<ComputerUpdateStatusDto> FailedUpdates { get; set; }
+        public List<ComputerUpdateStatusDto> PendingRebootUpdates { get; set; }
+        public List<ComputerUpdateStatusDto> InstalledUpdates { get; set; }
     }
 
     public class ComputerUpdateStatusDto

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { SyncHistoryTable } from "@/components/sync-history-table";
+import { WsusServersManager } from "@/components/wsus-servers-manager";
 import {
   Card,
   CardContent,
@@ -74,14 +75,26 @@ function ServerBadges({ servers }: { servers: string[] }) {
 }
 
 export default async function SyncCatalogPage() {
-  const [settingsList, history, products, classifications] = await Promise.all([
-    prisma.synchronizationSetting.findMany({ orderBy: { serverName: "asc" } }),
-    prisma.synchronizationHistory.findMany({
-      orderBy: { startTime: "desc" },
-    }),
-    prisma.product.findMany({ orderBy: { title: "asc" } }),
-    prisma.classification.findMany({ orderBy: { title: "asc" } }),
-  ]);
+  const [wsusServers, settingsList, history, products, classifications] =
+    await Promise.all([
+      prisma.wsusServer.findMany({ orderBy: { name: "asc" } }),
+      prisma.synchronizationSetting.findMany({ orderBy: { serverName: "asc" } }),
+      prisma.synchronizationHistory.findMany({
+        orderBy: { startTime: "desc" },
+      }),
+      prisma.product.findMany({ orderBy: { title: "asc" } }),
+      prisma.classification.findMany({ orderBy: { title: "asc" } }),
+    ]);
+
+  const serializedServers = wsusServers.map((s) => ({
+    id: s.id,
+    name: s.name,
+    baseUrl: s.baseUrl,
+    enabled: s.enabled,
+    lastSyncedAt: s.lastSyncedAt ? s.lastSyncedAt.toISOString() : null,
+    lastStatus: s.lastStatus,
+    lastError: s.lastError,
+  }));
 
   const groupedProducts = groupByKey(products, (p) => p.categoryId);
   const groupedClassifications = groupByKey(
@@ -104,13 +117,15 @@ export default async function SyncCatalogPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">
-          Synchronization &amp; Catalog
+          Synchronization &amp; Servers
         </h1>
         <p className="text-muted-foreground">
-          WSUS synchronization schedule, run history, subscribed products, and
-          classifications.
+          Manage WSUS server API endpoints, pull live sync data, and review
+          synchronization history and catalog.
         </p>
       </div>
+
+      <WsusServersManager initialServers={serializedServers} />
 
       {/* Sync Settings */}
       {settingsList.length > 0 && (

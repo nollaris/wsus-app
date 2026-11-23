@@ -1,23 +1,18 @@
 using System;
 using System.Collections.Generic;
-using System.Configuration;
 using System.Linq;
 using Microsoft.UpdateServices.Administration;
-using NLog;
 using WsusRestApi.Configuration;
 using WsusRestApi.Models;
 
 namespace WsusRestApi.Services
 {
     /// <summary>
-    /// Strictly read-only WSUS SDK data collector.
-    /// Never invokes any state-mutating WSUS methods (Approve, Decline, StartSynchronization, etc.).
+    /// Strictly read-only local WSUS SDK data collector (no remoting, C# 5 compatible).
     /// </summary>
     public sealed class WsusSdkDataService : IWsusDataService
     {
-        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
         private readonly WsusConnectionFactory _connectionFactory;
-        private readonly int _maxSyncHistoryItems;
 
         public WsusSdkDataService() : this(new WsusConnectionFactory())
         {
@@ -25,45 +20,29 @@ namespace WsusRestApi.Services
 
         public WsusSdkDataService(WsusConnectionFactory connectionFactory)
         {
-            _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
-            _maxSyncHistoryItems = ApiConfigProvider.Instance.GetWsusSettings().MaxSyncHistoryItems;
-            if (_maxSyncHistoryItems <= 0)
-            {
-                _maxSyncHistoryItems = 50;
-            }
+            if (connectionFactory == null) throw new ArgumentNullException("connectionFactory");
+            _connectionFactory = connectionFactory;
         }
 
-        public WsusServerSnapshot FetchServerSnapshot(WsusServerConfig serverConfig)
+        public WsusLocalSnapshot FetchLocalSnapshot()
         {
-            var capturedAt = DateTime.UtcNow;
-            IUpdateServer server = _connectionFactory.Connect(serverConfig);
+            WsusSettingsConfig settings = ApiConfigProvider.Instance.GetWsusSettings();
+            string serverId = settings.ResolvedServerId;
+            string serverName = settings.ResolvedServerName;
+            int maxSyncHistory = settings.MaxSyncHistoryItems > 0 ? settings.MaxSyncHistoryItems : 50;
 
-            var version = server.Version?.ToString() ?? "Unknown";
-            var computers = ReadComputers(server, serverConfig.Id);
-            var updates = ReadUpdates(server, serverConfig.Id);
-            var groups = ReadGroups(server, serverConfig.Id, computers);
-            var sync = ReadSyncOverview(server, serverConfig);
+            DateTime capturedAt = DateTime.UtcNow;
+            IUpdateServer server = _connectionFactory.ConnectLocal();
 
-            var summary = BuildSummary(serverConfig, version, capturedAt, computers, updates, groups, sync);
+            string version = server.Version != null ? server.Version.ToString() : "Unknown";
+            List<ComputerDto> computers = ReadComputers(server, serverId);
+            List<UpdateDto> updates = ReadUpdates(server, serverId);
+            List<GroupDto> groups = ReadGroups(server, serverId, computers);
+            SyncOverviewDto sync = ReadSyncOverview(server, serverId, serverName, maxSyncHistory);
+            ServerSummaryDto summary = BuildSummary(serverId, serverName, version, capturedAt, computers, updates, groups, sync);
 
-            var status = new ServerStatusDto
+            return new WsusLocalSnapshot
             {
-                Id = serverConfig.Id,
-                Name = serverConfig.Name,
-                HostName = serverConfig.HostName,
-                Port = serverConfig.Port,
-                UseSsl = serverConfig.UseSsl,
-                Enabled = serverConfig.Enabled,
-                Description = serverConfig.Description,
-                IsOnline = true,
-                Version = version,
-                LastRefreshedUtc = capturedAt,
-                LastError = null
-            };
-
-            return new WsusServerSnapshot
-            {
-                Status = status,
                 Summary = summary,
                 Computers = computers,
                 Updates = updates,
@@ -73,24 +52,25 @@ namespace WsusRestApi.Services
             };
         }
 
-        public ComputerDetailDto FetchComputerDetail(WsusServerConfig serverConfig, string computerId)
+        public ComputerDetailDto FetchComputerDetail(string computerId)
         {
-            IUpdateServer server = _connectionFactory.Connect(serverConfig);
+            string serverId = ApiConfigProvider.Instance.GetWsusSettings().ResolvedServerId;
+            IUpdateServer server = _connectionFactory.ConnectLocal();
             IComputerTarget target = server.GetComputerTarget(computerId);
             if (target == null)
                 return null;
 
-            var computerDto = MapComputer(server, serverConfig.Id, target);
-            var detail = new ComputerDetailDto { Computer = computerDto };
+            ComputerDto computerDto = MapComputer(serverId, target);
+            ComputerDetailDto detail = new ComputerDetailDto { Computer = computerDto };
 
-            var installInfoCollection = target.GetUpdateInstallationInfoPerUpdate(new UpdateScope());
+            UpdateInstallationInfoCollection installInfoCollection = target.GetUpdateInstallationInfoPerUpdate(new UpdateScope());
             foreach (IUpdateInstallationInfo info in installInfoCollection)
             {
                 IUpdate update = info.GetUpdate();
                 if (update == null)
                     continue;
 
-                var item = new ComputerUpdateStatusDto
+                ComputerUpdateStatusDto item = new ComputerUpdateStatusDto
                 {
                     UpdateId = update.Id.UpdateId.ToString(),
                     RevisionNumber = update.Id.RevisionNumber,
@@ -123,12 +103,14 @@ namespace WsusRestApi.Services
             return detail;
         }
 
-        public UpdateDetailDto FetchUpdateDetail(WsusServerConfig serverConfig, string updateId, int? revisionNumber = null)
+        public UpdateDetailDto FetchUpdateDetail(string updateId, int? revisionNumber = null)
         {
-            if (!Guid.TryParse(updateId, out Guid parsedGuid))
+            Guid parsedGuid;
+            if (!Guid.TryParse(updateId, out parsedGuid))
                 return null;
 
-            IUpdateServer server = _connectionFactory.Connect(serverConfig);
+            string serverId = ApiConfigProvider.Instance.GetWsusSettings().ResolvedServerId;
+            IUpdateServer server = _connectionFactory.ConnectLocal();
             UpdateRevisionId revId = revisionNumber.HasValue
                 ? new UpdateRevisionId(parsedGuid, revisionNumber.Value)
                 : new UpdateRevisionId(parsedGuid);
@@ -137,8 +119,8 @@ namespace WsusRestApi.Services
             if (update == null)
                 return null;
 
-            var updateDto = MapUpdate(server, serverConfig.Id, update);
-            var detail = new UpdateDetailDto
+            UpdateDto updateDto = MapUpdate(serverId, update);
+            UpdateDetailDto detail = new UpdateDetailDto
             {
                 Update = updateDto,
                 Description = update.Description
@@ -154,7 +136,7 @@ namespace WsusRestApi.Services
 
             try
             {
-                var superseding = update.GetRelatedUpdates(UpdateRelationship.UpdatesThatSupersedeThisUpdate);
+                UpdateCollection superseding = update.GetRelatedUpdates(UpdateRelationship.UpdatesThatSupersedeThisUpdate);
                 if (superseding != null)
                 {
                     foreach (IUpdate sup in superseding)
@@ -163,16 +145,17 @@ namespace WsusRestApi.Services
                     }
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                Logger.Debug(ex, "Could not read superseding updates for {0}", updateId);
+                // Ignore if relationship metadata is unavailable
             }
 
-            var groupNames = BuildGroupNameLookup(server);
+            Dictionary<string, string> groupNames = BuildGroupNameLookup(server);
             foreach (IUpdateApproval approval in update.GetUpdateApprovals())
             {
                 string groupIdStr = approval.ComputerTargetGroupId.ToString();
-                groupNames.TryGetValue(groupIdStr, out string groupName);
+                string groupName;
+                groupNames.TryGetValue(groupIdStr, out groupName);
 
                 detail.Approvals.Add(new UpdateApprovalDto
                 {
@@ -182,12 +165,12 @@ namespace WsusRestApi.Services
                     TargetGroupName = groupName ?? groupIdStr,
                     AdministratorName = approval.AdministratorName,
                     CreationDateUtc = ToNullableUtc(approval.CreationDate),
-                    GoLiveTimeUtc = ToNullableUtc(approval.GoLiveTime),
+                    GoLiveTimeUtc = null,
                     DeadlineUtc = ToNullableUtc(approval.Deadline)
                 });
             }
 
-            var computerLookup = new Dictionary<string, IComputerTarget>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, IComputerTarget> computerLookup = new Dictionary<string, IComputerTarget>(StringComparer.OrdinalIgnoreCase);
             foreach (IComputerTarget ct in server.GetComputerTargets())
             {
                 computerLookup[ct.Id] = ct;
@@ -195,12 +178,13 @@ namespace WsusRestApi.Services
 
             foreach (IUpdateInstallationInfo info in update.GetUpdateInstallationInfoPerComputerTarget(new ComputerTargetScope()))
             {
-                computerLookup.TryGetValue(info.ComputerTargetId, out IComputerTarget target);
+                IComputerTarget target;
+                computerLookup.TryGetValue(info.ComputerTargetId, out target);
                 detail.ComputerStatuses.Add(new UpdateComputerStatusDto
                 {
                     ComputerId = info.ComputerTargetId,
-                    FullDomainName = target?.FullDomainName ?? info.ComputerTargetId,
-                    IpAddress = target?.IPAddress?.ToString() ?? string.Empty,
+                    FullDomainName = target != null ? target.FullDomainName : info.ComputerTargetId,
+                    IpAddress = (target != null && target.IPAddress != null) ? target.IPAddress.ToString() : string.Empty,
                     InstallationState = info.UpdateInstallationState.ToString(),
                     LastSyncTimeUtc = target != null ? ToNullableUtc(target.LastSyncTime) : null
                 });
@@ -209,23 +193,25 @@ namespace WsusRestApi.Services
             return detail;
         }
 
-        public GroupDetailDto FetchGroupDetail(WsusServerConfig serverConfig, string groupId)
+        public GroupDetailDto FetchGroupDetail(string groupId)
         {
-            if (!Guid.TryParse(groupId, out Guid parsedGroupId))
+            Guid parsedGroupId;
+            if (!Guid.TryParse(groupId, out parsedGroupId))
                 return null;
 
-            IUpdateServer server = _connectionFactory.Connect(serverConfig);
+            string serverId = ApiConfigProvider.Instance.GetWsusSettings().ResolvedServerId;
+            IUpdateServer server = _connectionFactory.ConnectLocal();
             IComputerTargetGroup group = server.GetComputerTargetGroup(parsedGroupId);
             if (group == null)
                 return null;
 
-            var computers = new List<ComputerDto>();
+            List<ComputerDto> computers = new List<ComputerDto>();
             foreach (IComputerTarget target in group.GetComputerTargets())
             {
-                computers.Add(MapComputer(server, serverConfig.Id, target));
+                computers.Add(MapComputer(serverId, target));
             }
 
-            var groupDto = BuildGroupDto(serverConfig.Id, group.Id.ToString(), group.Name, computers);
+            GroupDto groupDto = BuildGroupDto(serverId, group.Id.ToString(), group.Name, computers);
             return new GroupDetailDto
             {
                 Group = groupDto,
@@ -235,26 +221,26 @@ namespace WsusRestApi.Services
 
         private List<ComputerDto> ReadComputers(IUpdateServer server, string serverId)
         {
-            var result = new List<ComputerDto>();
+            List<ComputerDto> result = new List<ComputerDto>();
             foreach (IComputerTarget target in server.GetComputerTargets())
             {
-                result.Add(MapComputer(server, serverId, target));
+                result.Add(MapComputer(serverId, target));
             }
             return result;
         }
 
-        private ComputerDto MapComputer(IUpdateServer server, string serverId, IComputerTarget target)
+        private ComputerDto MapComputer(string serverId, IComputerTarget target)
         {
-            var summary = target.GetUpdateInstallationSummary();
-            int installed = summary?.InstalledCount ?? 0;
-            int needed = (summary?.NotInstalledCount ?? 0) + (summary?.DownloadedCount ?? 0);
-            int failed = summary?.FailedCount ?? 0;
-            int pendingReboot = summary?.InstalledPendingRebootCount ?? 0;
-            int notApplicable = summary?.NotApplicableCount ?? 0;
-            int unknown = summary?.UnknownCount ?? 0;
+            IUpdateSummary summary = target.GetUpdateInstallationSummary();
+            int installed = summary != null ? summary.InstalledCount : 0;
+            int needed = summary != null ? (summary.NotInstalledCount + summary.DownloadedCount) : 0;
+            int failed = summary != null ? summary.FailedCount : 0;
+            int pendingReboot = summary != null ? summary.InstalledPendingRebootCount : 0;
+            int notApplicable = summary != null ? summary.NotApplicableCount : 0;
+            int unknown = summary != null ? summary.UnknownCount : 0;
 
-            var lastSyncUtc = ToNullableUtc(target.LastSyncTime);
-            var assignedGroups = new List<string>();
+            DateTime? lastSyncUtc = ToNullableUtc(target.LastSyncTime);
+            List<string> assignedGroups = new List<string>();
             try
             {
                 foreach (IComputerTargetGroup grp in target.GetComputerTargetGroups())
@@ -262,9 +248,9 @@ namespace WsusRestApi.Services
                     assignedGroups.Add(grp.Name);
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                Logger.Debug(ex, "Could not read target groups for computer {0}", target.Id);
+                // Ignore group lookup issues on individual targets
             }
 
             string complianceStatus;
@@ -277,21 +263,25 @@ namespace WsusRestApi.Services
             else
                 complianceStatus = "Compliant";
 
+            string osVer = (target.OSInfo != null && target.OSInfo.Version != null)
+                ? target.OSInfo.Version.ToString()
+                : null;
+
             return new ComputerDto
             {
                 ComputerId = target.Id,
                 ServerId = serverId,
                 FullDomainName = target.FullDomainName,
-                IpAddress = target.IPAddress?.ToString() ?? string.Empty,
+                IpAddress = target.IPAddress != null ? target.IPAddress.ToString() : string.Empty,
                 OsDescription = target.OSDescription ?? "Unknown",
-                OsVersion = target.OSInfo?.Version?.ToString(),
-                ClientVersion = target.ClientVersion?.ToString() ?? string.Empty,
+                OsVersion = osVer,
+                ClientVersion = target.ClientVersion != null ? target.ClientVersion.ToString() : string.Empty,
                 ComputerRole = target.ComputerRole.ToString(),
                 RequestedTargetGroup = target.RequestedTargetGroupName,
                 AssignedTargetGroups = assignedGroups,
                 LastSyncTimeUtc = lastSyncUtc,
                 LastReportedStatusTimeUtc = ToNullableUtc(target.LastReportedStatusTime),
-                LastReportedRebootTimeUtc = ToNullableUtc(target.LastReportedRebootTime),
+                LastReportedRebootTimeUtc = null,
                 InstalledCount = installed,
                 NeededCount = needed,
                 FailedCount = failed,
@@ -304,8 +294,8 @@ namespace WsusRestApi.Services
 
         private List<UpdateDto> ReadUpdates(IUpdateServer server, string serverId)
         {
-            var result = new List<UpdateDto>();
-            var scope = new UpdateScope
+            List<UpdateDto> result = new List<UpdateDto>();
+            UpdateScope scope = new UpdateScope
             {
                 ApprovedStates = ApprovedStates.Any,
                 IncludedInstallationStates = UpdateInstallationStates.All
@@ -313,25 +303,25 @@ namespace WsusRestApi.Services
 
             foreach (IUpdate update in server.GetUpdates(scope))
             {
-                result.Add(MapUpdate(server, serverId, update));
+                result.Add(MapUpdate(serverId, update));
             }
 
             return result;
         }
 
-        private UpdateDto MapUpdate(IUpdateServer server, string serverId, IUpdate update)
+        private UpdateDto MapUpdate(string serverId, IUpdate update)
         {
             IUpdateSummary summary = null;
             try
             {
                 summary = update.GetSummary(new ComputerTargetScope());
             }
-            catch (Exception ex)
+            catch
             {
-                Logger.Debug(ex, "Could not read summary for update {0}", update.Id.UpdateId);
+                // Ignore if summary is unavailable
             }
 
-            var products = new List<string>();
+            List<string> products = new List<string>();
             try
             {
                 foreach (IUpdateCategory cat in update.GetUpdateCategories())
@@ -340,9 +330,9 @@ namespace WsusRestApi.Services
                         products.Add(cat.Title);
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                Logger.Debug(ex, "Could not read product categories for update {0}", update.Id.UpdateId);
+                // Ignore category read failure
             }
 
             bool requiresReboot = false;
@@ -353,7 +343,7 @@ namespace WsusRestApi.Services
             }
             catch
             {
-                // Ignore if InstallationBehavior is unavailable for metadata-only updates
+                // Ignore if InstallationBehavior is unavailable
             }
 
             return new UpdateDto
@@ -374,25 +364,27 @@ namespace WsusRestApi.Services
                 IsLatestRevision = update.IsLatestRevision,
                 UpdateType = update.UpdateType.ToString(),
                 RequiresReboot = requiresReboot,
-                InstalledCount = summary?.InstalledCount ?? 0,
-                NeededCount = (summary?.NotInstalledCount ?? 0) + (summary?.DownloadedCount ?? 0),
-                FailedCount = summary?.FailedCount ?? 0,
-                PendingRebootCount = summary?.InstalledPendingRebootCount ?? 0,
-                NotApplicableCount = summary?.NotApplicableCount ?? 0,
-                UnknownCount = summary?.UnknownCount ?? 0
+                InstalledCount = summary != null ? summary.InstalledCount : 0,
+                NeededCount = summary != null ? (summary.NotInstalledCount + summary.DownloadedCount) : 0,
+                FailedCount = summary != null ? summary.FailedCount : 0,
+                PendingRebootCount = summary != null ? summary.InstalledPendingRebootCount : 0,
+                NotApplicableCount = summary != null ? summary.NotApplicableCount : 0,
+                UnknownCount = summary != null ? summary.UnknownCount : 0
             };
         }
 
         private List<GroupDto> ReadGroups(IUpdateServer server, string serverId, List<ComputerDto> allComputers)
         {
-            var result = new List<GroupDto>();
-            var byGroupName = new Dictionary<string, List<ComputerDto>>(StringComparer.OrdinalIgnoreCase);
+            List<GroupDto> result = new List<GroupDto>();
+            Dictionary<string, List<ComputerDto>> byGroupName =
+                new Dictionary<string, List<ComputerDto>>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var c in allComputers)
+            foreach (ComputerDto c in allComputers)
             {
-                foreach (var gName in c.AssignedTargetGroups)
+                foreach (string gName in c.AssignedTargetGroups)
                 {
-                    if (!byGroupName.TryGetValue(gName, out var list))
+                    List<ComputerDto> list;
+                    if (!byGroupName.TryGetValue(gName, out list))
                     {
                         list = new List<ComputerDto>();
                         byGroupName[gName] = list;
@@ -403,7 +395,8 @@ namespace WsusRestApi.Services
 
             foreach (IComputerTargetGroup group in server.GetComputerTargetGroups())
             {
-                byGroupName.TryGetValue(group.Name, out var members);
+                List<ComputerDto> members;
+                byGroupName.TryGetValue(group.Name, out members);
                 result.Add(BuildGroupDto(serverId, group.Id.ToString(), group.Name, members ?? new List<ComputerDto>()));
             }
 
@@ -431,12 +424,12 @@ namespace WsusRestApi.Services
             };
         }
 
-        private SyncOverviewDto ReadSyncOverview(IUpdateServer server, WsusServerConfig config)
+        private SyncOverviewDto ReadSyncOverview(IUpdateServer server, string serverId, string serverName, int maxSyncHistoryItems)
         {
             ISubscription sub = server.GetSubscription();
             IUpdateServerConfiguration serverCfg = server.GetConfiguration();
 
-            var settings = new SyncSettingsDto
+            SyncSettingsDto settings = new SyncSettingsDto
             {
                 SynchronizeAutomatically = sub.SynchronizeAutomatically,
                 SynchronizationTimeOfDayUtc = sub.SynchronizeAutomaticallyTimeOfDay.ToString(@"hh\:mm\:ss"),
@@ -448,20 +441,20 @@ namespace WsusRestApi.Services
                 IsReplicaServer = serverCfg.IsReplicaServer
             };
 
-            ISynchronizationProgress progress = sub.GetSynchronizationProgress();
-            var currentStatus = new SyncStatusDto
+            SynchronizationProgress progress = sub.GetSynchronizationProgress();
+            SyncStatusDto currentStatus = new SyncStatusDto
             {
                 Status = sub.GetSynchronizationStatus().ToString(),
-                TotalItems = progress?.TotalItems ?? 0,
-                ProcessedItems = progress?.ProcessedItems ?? 0,
-                CurrentPhase = progress?.Phase.ToString() ?? "Unknown"
+                TotalItems = progress != null ? progress.TotalItems : 0,
+                ProcessedItems = progress != null ? progress.ProcessedItems : 0,
+                CurrentPhase = progress != null ? progress.Phase.ToString() : "Unknown"
             };
 
-            var history = new List<SyncHistoryItemDto>();
+            List<SyncHistoryItemDto> history = new List<SyncHistoryItemDto>();
             foreach (ISynchronizationInfo info in sub.GetSynchronizationHistory())
             {
-                var startUtc = ToNullableUtc(info.StartTime);
-                var endUtc = ToNullableUtc(info.EndTime);
+                DateTime? startUtc = ToNullableUtc(info.StartTime);
+                DateTime? endUtc = ToNullableUtc(info.EndTime);
                 double? durationSeconds = (startUtc.HasValue && endUtc.HasValue && endUtc.Value >= startUtc.Value)
                     ? Math.Round((endUtc.Value - startUtc.Value).TotalSeconds, 2)
                     : (double?)null;
@@ -476,17 +469,17 @@ namespace WsusRestApi.Services
                     StartedManually = info.StartedManually,
                     Error = info.Error.ToString(),
                     ErrorText = info.ErrorText,
-                    UpdateErrorsCount = info.UpdateErrors?.Count ?? 0
+                    UpdateErrorsCount = info.UpdateErrors != null ? info.UpdateErrors.Count : 0
                 });
 
-                if (history.Count >= _maxSyncHistoryItems)
+                if (history.Count >= maxSyncHistoryItems)
                     break;
             }
 
             return new SyncOverviewDto
             {
-                ServerId = config.Id,
-                ServerName = config.Name,
+                ServerId = serverId,
+                ServerName = serverName,
                 Settings = settings,
                 CurrentStatus = currentStatus,
                 History = history
@@ -494,7 +487,8 @@ namespace WsusRestApi.Services
         }
 
         private static ServerSummaryDto BuildSummary(
-            WsusServerConfig config,
+            string serverId,
+            string serverName,
             string version,
             DateTime capturedAtUtc,
             List<ComputerDto> computers,
@@ -509,13 +503,13 @@ namespace WsusRestApi.Services
             int staleComputers = computers.Count(c => !c.LastSyncTimeUtc.HasValue || c.LastSyncTimeUtc.Value < DateTime.UtcNow.AddDays(-30));
             double compliancePct = totalComputers > 0 ? Math.Round((double)compliantComputers / totalComputers * 100.0, 2) : 100.0;
 
-            var lastSync = sync.History.FirstOrDefault();
+            SyncHistoryItemDto lastSync = sync.History.FirstOrDefault();
 
             return new ServerSummaryDto
             {
-                ServerId = config.Id,
-                ServerName = config.Name,
-                HostName = config.HostName,
+                ServerId = serverId,
+                ServerName = serverName,
+                HostName = Environment.MachineName,
                 IsOnline = true,
                 WsusVersion = version,
                 LastRefreshedUtc = capturedAtUtc,
@@ -533,9 +527,9 @@ namespace WsusRestApi.Services
                 CriticalUpdatesCount = updates.Count(u => string.Equals(u.Classification, "Critical Updates", StringComparison.OrdinalIgnoreCase)),
                 UpdatesNeedingApproval = updates.Count(u => !u.IsApproved && !u.IsDeclined && u.NeededCount > 0),
                 TotalGroups = groups.Count,
-                LastSyncStartTimeUtc = lastSync?.StartTimeUtc,
-                LastSyncEndTimeUtc = lastSync?.EndTimeUtc,
-                LastSyncResult = lastSync?.Result ?? "Unknown",
+                LastSyncStartTimeUtc = lastSync != null ? lastSync.StartTimeUtc : null,
+                LastSyncEndTimeUtc = lastSync != null ? lastSync.EndTimeUtc : null,
+                LastSyncResult = lastSync != null ? lastSync.Result : "Unknown",
                 UpdatesByClassification = updates
                     .GroupBy(u => u.Classification ?? "Other")
                     .ToDictionary(g => g.Key, g => g.Count()),
@@ -547,7 +541,7 @@ namespace WsusRestApi.Services
 
         private static Dictionary<string, string> BuildGroupNameLookup(IUpdateServer server)
         {
-            var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, string> dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (IComputerTargetGroup grp in server.GetComputerTargetGroups())
             {
                 dict[grp.Id.ToString()] = grp.Name;

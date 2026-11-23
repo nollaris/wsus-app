@@ -206,7 +206,22 @@ namespace WsusRestApi
                     string.Format("Computer '{0}' was not found.", computerId), correlationId));
                 return;
             }
-            WriteJson(context, 200, ApiResponse<ComputerDetailDto>.Ok(cached.Value, BuildMeta(serverId, cached, correlationId)));
+
+            bool? includeInstalled = ParseNullableBool(context.Request.QueryString["includeInstalled"]);
+            ComputerDetailDto payload = cached.Value;
+            if (includeInstalled.HasValue && !includeInstalled.Value)
+            {
+                payload = new ComputerDetailDto
+                {
+                    Computer = cached.Value.Computer,
+                    NeededUpdates = cached.Value.NeededUpdates,
+                    FailedUpdates = cached.Value.FailedUpdates,
+                    PendingRebootUpdates = cached.Value.PendingRebootUpdates,
+                    InstalledUpdates = new List<ComputerUpdateStatusDto>()
+                };
+            }
+
+            WriteJson(context, 200, ApiResponse<ComputerDetailDto>.Ok(payload, BuildMeta(serverId, cached, correlationId)));
         }
 
         private static void HandleUpdates(HttpContext context, string correlationId)

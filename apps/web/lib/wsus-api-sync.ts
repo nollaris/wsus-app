@@ -189,7 +189,8 @@ function normalizeBaseUrl(baseUrl: string): string {
 
 async function fetchFromWsus<T>(
   server: { baseUrl: string; apiKey: string },
-  path: string
+  path: string,
+  timeoutMs = 30000
 ): Promise<WsusApiEnvelope<T>> {
   const gatewayUrl = process.env.WSUS_GATEWAY_URL?.trim().replace(/\/+$/, "");
   const cleanBase = normalizeBaseUrl(server.baseUrl);
@@ -208,6 +209,7 @@ async function fetchFromWsus<T>(
     method: "GET",
     headers,
     cache: "no-store",
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   const json = (await res.json().catch(() => null)) as WsusApiEnvelope<T> | null;
@@ -228,14 +230,15 @@ export async function testWsusServerConnection(server: {
     serverId?: string;
     serverName?: string;
     cacheDurationMinutes?: number;
-  }>(server, "/health");
+  }>(server, "/health", 15000);
   return res.data;
 }
 
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
-  worker: (item: T, index: number) => Promise<R>
+  worker: (item: T, index: number) => Promise<R>,
+  delayMs = 0
 ): Promise<R[]> {
   if (items.length === 0) return [];
   const results = new Array<R>(items.length);
@@ -246,77 +249,123 @@ async function mapWithConcurrency<T, R>(
       const idx = nextIndex++;
       if (idx >= items.length) break;
       results[idx] = await worker(items[idx]!, idx);
+      if (delayMs > 0 && nextIndex < items.length) {
+        await sleep(delayMs);
+      }
     }
   }
 
-  const workerCount = Math.min(concurrency, items.length);
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
   await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
   return results;
 }
 
 async function fetchAllPages<T>(
   server: { baseUrl: string; apiKey: string },
-  resourcePath: string
+  resourcePath: string,
+  options: {
+    pageSize: number;
+    maxItems: number | null;
+    concurrency: number;
+    delayMs: number;
+    timeoutMs: number;
+  }
 ): Promise<T[]> {
-  const pageSize = 500;
+  const effectivePageSize =
+    options.maxItems !== null
+      ? Math.min(options.pageSize, options.maxItems)
+      : options.pageSize;
   const sep = resourcePath.includes("?") ? "&" : "?";
   const firstRes = await fetchFromWsus<T[]>(
     server,
-    `${resourcePath}${sep}page=1&pageSize=${pageSize}`
+    `${resourcePath}${sep}page=1&pageSize=${effectivePageSize}`,
+    options.timeoutMs
   );
 
   const items: T[] = [...firstRes.data];
+  if (options.maxItems !== null && items.length >= options.maxItems) {
+    return items.slice(0, options.maxItems);
+  }
+
   const totalPages = firstRes.meta?.pagination?.totalPages ?? 1;
-  if (totalPages <= 1) {
+  const maxPagesAllowed =
+    options.maxItems !== null
+      ? Math.ceil(options.maxItems / effectivePageSize)
+      : totalPages;
+  const pagesToFetch = Math.min(totalPages, maxPagesAllowed);
+
+  if (pagesToFetch <= 1) {
     return items;
   }
 
   const remainingPages = Array.from(
-    { length: totalPages - 1 },
+    { length: pagesToFetch - 1 },
     (_, i) => i + 2
   );
   const pageResults = await mapWithConcurrency(
     remainingPages,
-    6,
+    options.concurrency,
     async (page) => {
       const res = await fetchFromWsus<T[]>(
         server,
-        `${resourcePath}${sep}page=${page}&pageSize=${pageSize}`
+        `${resourcePath}${sep}page=${page}&pageSize=${effectivePageSize}`,
+        options.timeoutMs
       );
       return res.data;
-    }
+    },
+    options.delayMs
   );
 
   for (const pageItems of pageResults) {
     items.push(...pageItems);
   }
-  return items;
+  return options.maxItems !== null ? items.slice(0, options.maxItems) : items;
 }
 
 async function fetchComputerDetailsInBatches(
   server: { baseUrl: string; apiKey: string },
   computers: RemoteComputer[],
-  concurrency = 16
+  options: {
+    maxComputers: number | null;
+    concurrency: number;
+    delayMs: number;
+    timeoutMs: number;
+    includeInstalled: boolean;
+  }
 ): Promise<RemoteComputerDetail[]> {
-  const results = await mapWithConcurrency(computers, concurrency, async (c) => {
-    try {
-      const res = await fetchFromWsus<RemoteComputerDetail>(
-        server,
-        `/computers/${encodeURIComponent(c.computerId)}`
-      );
-      return res.data;
-    } catch {
-      return null;
-    }
-  });
+  const targetComputers =
+    options.maxComputers !== null
+      ? computers.slice(0, options.maxComputers)
+      : computers;
+  const query = options.includeInstalled ? "" : "?includeInstalled=false";
+
+  const results = await mapWithConcurrency(
+    targetComputers,
+    options.concurrency,
+    async (c) => {
+      try {
+        const res = await fetchFromWsus<RemoteComputerDetail>(
+          server,
+          `/computers/${encodeURIComponent(c.computerId)}${query}`,
+          options.timeoutMs
+        );
+        return res.data;
+      } catch {
+        return null;
+      }
+    },
+    options.delayMs
+  );
 
   return results.filter((item): item is RemoteComputerDetail => item !== null);
 }
 
 export async function syncWsusServerById(
   serverId: number,
-  scope: SyncScope = "all"
+  scope: SyncScope = "all",
+  rawLimits?: SyncLimits
 ) {
+  const limits = resolveSyncLimits(rawLimits);
   const server = await prisma.wsusServer.findUnique({ where: { id: serverId } });
   if (!server) {
     throw new Error("WSUS server not found");
@@ -327,22 +376,48 @@ export async function syncWsusServerById(
   const syncOverview = scope === "all" || scope === "sync";
   const syncClientPatches = scope === "all" || scope === "client-patches";
 
+  const updatesPath = limits.approvedUpdatesOnly
+    ? "/updates?approved=true&declined=false"
+    : "/updates";
+
   const startedAt = Date.now();
   try {
     const [computers, updates, syncRes] = await Promise.all([
       syncComputers || syncClientPatches
-        ? fetchAllPages<RemoteComputer>(server, "/computers")
+        ? fetchAllPages<RemoteComputer>(server, "/computers", {
+            pageSize: limits.pageSize,
+            maxItems: limits.maxComputers,
+            concurrency: limits.concurrency,
+            delayMs: limits.requestDelayMs,
+            timeoutMs: limits.requestTimeoutMs,
+          })
         : Promise.resolve([] as RemoteComputer[]),
       syncUpdates
-        ? fetchAllPages<RemoteUpdate>(server, "/updates")
+        ? fetchAllPages<RemoteUpdate>(server, updatesPath, {
+            pageSize: limits.pageSize,
+            maxItems: limits.maxUpdates,
+            concurrency: limits.concurrency,
+            delayMs: limits.requestDelayMs,
+            timeoutMs: limits.requestTimeoutMs,
+          })
         : Promise.resolve([] as RemoteUpdate[]),
       syncOverview
-        ? fetchFromWsus<RemoteSyncOverview>(server, "/sync?limit=50")
+        ? fetchFromWsus<RemoteSyncOverview>(
+            server,
+            "/sync?limit=50",
+            limits.requestTimeoutMs
+          )
         : Promise.resolve(null),
     ]);
 
     const computerDetails = syncClientPatches
-      ? await fetchComputerDetailsInBatches(server, computers)
+      ? await fetchComputerDetailsInBatches(server, computers, {
+          maxComputers: limits.maxClientDetailComputers,
+          concurrency: limits.concurrency,
+          delayMs: limits.requestDelayMs,
+          timeoutMs: limits.requestTimeoutMs,
+          includeInstalled: !limits.skipInstalledClientPatches,
+        })
       : [];
 
     const updateApprovalMap = new Map<string, string>();
@@ -398,7 +473,7 @@ export async function syncWsusServerById(
         ...(detail.failedUpdates ?? []),
         ...(detail.neededUpdates ?? []),
         ...(detail.pendingRebootUpdates ?? []),
-        ...(detail.installedUpdates ?? []),
+        ...(limits.skipInstalledClientPatches ? [] : (detail.installedUpdates ?? [])),
       ];
       for (const upd of allUpdates) {
         clientPatchRows.push({
@@ -634,7 +709,8 @@ export async function syncWsusServerById(
 
 export async function startBackgroundSync(
   serverIds: number[],
-  scope: SyncScope = "all"
+  scope: SyncScope = "all",
+  limits?: SyncLimits
 ) {
   const toStart = serverIds.filter((id) => !activeWsusSyncs.has(id));
   if (toStart.length === 0) {
@@ -648,7 +724,7 @@ export async function startBackgroundSync(
 
   for (const id of toStart) {
     activeWsusSyncs.add(id);
-    void syncWsusServerById(id, scope)
+    void syncWsusServerById(id, scope, limits)
       .then(() => {
         try {
           revalidatePath("/", "layout");

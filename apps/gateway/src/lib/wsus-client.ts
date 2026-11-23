@@ -14,6 +14,11 @@ export function buildForwardedQuery(c: Context): string {
   return qs ? `?${qs}` : "";
 }
 
+const DEFAULT_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.WSUS_GATEWAY_TIMEOUT_MS);
+  return Number.isFinite(parsed) && parsed >= 1000 ? Math.trunc(parsed) : 30000;
+})();
+
 export async function proxyWsusGet(c: Context, upstreamPath: string) {
   const customBaseUrl = c.req.header("x-wsus-base-url")?.trim();
   const customApiKey = c.req.header("x-wsus-api-key")?.trim();
@@ -29,6 +34,7 @@ export async function proxyWsusGet(c: Context, upstreamPath: string) {
         "X-Api-Key": apiKey,
         Accept: "application/json",
       },
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
     });
 
     const body = await res.json().catch(() => null);
@@ -50,17 +56,23 @@ export async function proxyWsusGet(c: Context, upstreamPath: string) {
 
     return c.json(body, 200);
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Failed to reach external WSUS API";
+    const isTimeout =
+      err instanceof Error &&
+      (err.name === "TimeoutError" || err.name === "AbortError");
+    const message = isTimeout
+      ? `WSUS API request timed out after ${DEFAULT_TIMEOUT_MS}ms`
+      : err instanceof Error
+        ? err.message
+        : "Failed to reach external WSUS API";
     return c.json(
       {
         success: false,
         error: {
-          code: "WSUS_API_UNREACHABLE",
+          code: isTimeout ? "WSUS_API_TIMEOUT" : "WSUS_API_UNREACHABLE",
           message,
         },
       },
-      502
+      isTimeout ? 504 : 502
     );
   }
 }

@@ -14,12 +14,13 @@ import {
   RefreshCw,
   Save,
   ShieldAlert,
+  SlidersHorizontal,
   Trash2,
   X,
   XCircle,
 } from "lucide-react";
 import { canManageServers, canTriggerSync } from "@/lib/rbac";
-import type { SyncScope } from "@/lib/wsus-api-sync";
+import type { SyncLimits, SyncScope } from "@/lib/wsus-api-sync";
 import { Alert, AlertDescription } from "@workspace/ui/components/ui/alert";
 import { Button } from "@workspace/ui/components/ui/button";
 import {
@@ -116,6 +117,16 @@ export function WsusServerControl({
   const [startingScope, setStartingScope] = React.useState<SyncScope | null>(
     null
   );
+  const [showLimits, setShowLimits] = React.useState(false);
+  const [maxComputers, setMaxComputers] = React.useState("");
+  const [maxUpdates, setMaxUpdates] = React.useState("");
+  const [maxClientDetails, setMaxClientDetails] = React.useState("");
+  const [concurrency, setConcurrency] = React.useState("4");
+  const [requestDelayMs, setRequestDelayMs] = React.useState("0");
+  const [requestTimeoutSec, setRequestTimeoutSec] = React.useState("30");
+  const [approvedUpdatesOnly, setApprovedUpdatesOnly] = React.useState(false);
+  const [skipInstalledClientPatches, setSkipInstalledClientPatches] =
+    React.useState(false);
   const [toggling, setToggling] = React.useState(false);
 
   const [keyDialogOpen, setKeyDialogOpen] = React.useState(false);
@@ -195,6 +206,28 @@ export function WsusServerControl({
     }
   }
 
+  function buildLimitsPayload(): SyncLimits {
+    const toPositiveInt = (raw: string): number | undefined => {
+      const n = Number(raw.trim());
+      return Number.isFinite(n) && n > 0 ? Math.trunc(n) : undefined;
+    };
+    const toNonNegInt = (raw: string): number | undefined => {
+      const n = Number(raw.trim());
+      return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : undefined;
+    };
+    const timeoutSec = toPositiveInt(requestTimeoutSec);
+    return {
+      maxComputers: toPositiveInt(maxComputers),
+      maxUpdates: toPositiveInt(maxUpdates),
+      maxClientDetailComputers: toPositiveInt(maxClientDetails),
+      concurrency: toPositiveInt(concurrency),
+      requestDelayMs: toNonNegInt(requestDelayMs),
+      requestTimeoutMs: timeoutSec ? timeoutSec * 1000 : undefined,
+      approvedUpdatesOnly,
+      skipInstalledClientPatches,
+    };
+  }
+
   async function handleSync(scope: SyncScope) {
     setStartingScope(scope);
     setFeedback(null);
@@ -202,7 +235,11 @@ export function WsusServerControl({
       const res = await fetch("/api/wsus-sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ serverId: server.id, scope }),
+        body: JSON.stringify({
+          serverId: server.id,
+          scope,
+          limits: buildLimitsPayload(),
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -416,22 +453,141 @@ export function WsusServerControl({
             </CardDescription>
           </div>
           {allowSync && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={testing}
-              onClick={handleTest}
-            >
-              {testing ? (
-                <Loader2 className="mr-2 size-4 animate-spin" />
-              ) : (
-                <Activity className="mr-2 size-4" />
-              )}
-              Test Connection
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLimits((v) => !v)}
+              >
+                <SlidersHorizontal className="mr-2 size-4" />
+                Request Limits
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={testing}
+                onClick={handleTest}
+              >
+                {testing ? (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                ) : (
+                  <Activity className="mr-2 size-4" />
+                )}
+                Test Connection
+              </Button>
+            </div>
           )}
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {allowSync && showLimits && (
+            <div className="rounded-lg border bg-muted/30 p-4 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                <div className="space-y-1.5">
+                  <Label htmlFor="limit-computers" className="text-xs">
+                    Max Computers
+                  </Label>
+                  <Input
+                    id="limit-computers"
+                    type="number"
+                    min={0}
+                    placeholder="Unlimited"
+                    value={maxComputers}
+                    onChange={(e) => setMaxComputers(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="limit-updates" className="text-xs">
+                    Max Updates
+                  </Label>
+                  <Input
+                    id="limit-updates"
+                    type="number"
+                    min={0}
+                    placeholder="Unlimited"
+                    value={maxUpdates}
+                    onChange={(e) => setMaxUpdates(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="limit-client-details" className="text-xs">
+                    Max Client Details
+                  </Label>
+                  <Input
+                    id="limit-client-details"
+                    type="number"
+                    min={0}
+                    placeholder="Unlimited"
+                    value={maxClientDetails}
+                    onChange={(e) => setMaxClientDetails(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="limit-concurrency" className="text-xs">
+                    Concurrency (1–16)
+                  </Label>
+                  <Input
+                    id="limit-concurrency"
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={concurrency}
+                    onChange={(e) => setConcurrency(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="limit-delay" className="text-xs">
+                    Delay (ms)
+                  </Label>
+                  <Input
+                    id="limit-delay"
+                    type="number"
+                    min={0}
+                    max={5000}
+                    value={requestDelayMs}
+                    onChange={(e) => setRequestDelayMs(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="limit-timeout" className="text-xs">
+                    Timeout (sec)
+                  </Label>
+                  <Input
+                    id="limit-timeout"
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={requestTimeoutSec}
+                    onChange={(e) => setRequestTimeoutSec(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-6 text-xs">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="size-4 rounded border"
+                    checked={approvedUpdatesOnly}
+                    onChange={(e) => setApprovedUpdatesOnly(e.target.checked)}
+                  />
+                  <span>Approved updates only (skip unapproved &amp; declined)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="size-4 rounded border"
+                    checked={skipInstalledClientPatches}
+                    onChange={(e) =>
+                      setSkipInstalledClientPatches(e.target.checked)
+                    }
+                  />
+                  <span>
+                    Skip installed patches in Client Patch Status (faster)
+                  </span>
+                </label>
+              </div>
+            </div>
+          )}
           {allowSync ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {ENDPOINT_SCOPES.map((item) => {

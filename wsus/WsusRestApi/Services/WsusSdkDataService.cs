@@ -63,36 +63,61 @@ namespace WsusRestApi.Services
             ComputerDto computerDto = MapComputer(serverId, target);
             ComputerDetailDto detail = new ComputerDetailDto { Computer = computerDto };
 
-            Dictionary<string, IUpdateEvent> latestErrorsByUpdate = new Dictionary<string, IUpdateEvent>(StringComparer.OrdinalIgnoreCase);
-            try
-            {
-                UpdateEventCollection events = server.GetUpdateEventHistory(DateTime.UtcNow.AddDays(-60), DateTime.UtcNow);
-                if (events != null)
-                {
-                    foreach (IUpdateEvent evt in events)
-                    {
-                        if (!string.Equals(evt.ComputerId, computerId, StringComparison.OrdinalIgnoreCase)) continue;
-                        if (evt.UpdateId == null) continue;
-                        int errCode = (int)evt.ErrorCode;
-                        if (!evt.IsError && errCode == 0) continue;
+            UpdateInstallationInfoCollection installInfoCollection = target.GetUpdateInstallationInfoPerUpdate(new UpdateScope());
 
-                        string updKey = evt.UpdateId.UpdateId.ToString();
-                        IUpdateEvent existingEvt;
-                        if (!latestErrorsByUpdate.TryGetValue(updKey, out existingEvt) ||
-                            evt.CreationDate > existingEvt.CreationDate)
+            // Pre-filter installation states before calling info.GetUpdate() (avoids costly SDK calls for NotApplicable/Unknown)
+            // and only query 60-day update event history if the computer actually has Failed updates.
+            List<IUpdateInstallationInfo> relevantInfos = new List<IUpdateInstallationInfo>();
+            bool hasFailed = false;
+            foreach (IUpdateInstallationInfo info in installInfoCollection)
+            {
+                switch (info.UpdateInstallationState)
+                {
+                    case UpdateInstallationState.Failed:
+                        hasFailed = true;
+                        relevantInfos.Add(info);
+                        break;
+                    case UpdateInstallationState.InstalledPendingReboot:
+                    case UpdateInstallationState.Downloaded:
+                    case UpdateInstallationState.NotInstalled:
+                    case UpdateInstallationState.Installed:
+                        relevantInfos.Add(info);
+                        break;
+                }
+            }
+
+            Dictionary<string, IUpdateEvent> latestErrorsByUpdate = new Dictionary<string, IUpdateEvent>(StringComparer.OrdinalIgnoreCase);
+            if (hasFailed)
+            {
+                try
+                {
+                    UpdateEventCollection events = server.GetUpdateEventHistory(DateTime.UtcNow.AddDays(-60), DateTime.UtcNow);
+                    if (events != null)
+                    {
+                        foreach (IUpdateEvent evt in events)
                         {
-                            latestErrorsByUpdate[updKey] = evt;
+                            if (!string.Equals(evt.ComputerId, computerId, StringComparison.OrdinalIgnoreCase)) continue;
+                            if (evt.UpdateId == null) continue;
+                            int errCode = (int)evt.ErrorCode;
+                            if (!evt.IsError && errCode == 0) continue;
+
+                            string updKey = evt.UpdateId.UpdateId.ToString();
+                            IUpdateEvent existingEvt;
+                            if (!latestErrorsByUpdate.TryGetValue(updKey, out existingEvt) ||
+                                evt.CreationDate > existingEvt.CreationDate)
+                            {
+                                latestErrorsByUpdate[updKey] = evt;
+                            }
                         }
                     }
                 }
-            }
-            catch
-            {
-                // Ignore if event history is unavailable on this WSUS target
+                catch
+                {
+                    // Ignore if event history is unavailable on this WSUS target
+                }
             }
 
-            UpdateInstallationInfoCollection installInfoCollection = target.GetUpdateInstallationInfoPerUpdate(new UpdateScope());
-            foreach (IUpdateInstallationInfo info in installInfoCollection)
+            foreach (IUpdateInstallationInfo info in relevantInfos)
             {
                 IUpdate update = info.GetUpdate();
                 if (update == null)

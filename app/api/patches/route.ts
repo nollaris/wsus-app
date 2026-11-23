@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -22,44 +22,105 @@ export async function GET(request: Request) {
   const skip = (page - 1) * pageSize;
 
   if (tab === "inventory") {
-    const where: Prisma.PatchInventoryWhereInput = {};
+    const conditions: Prisma.Sql[] = [];
     if (search) {
-      where.OR = [
-        { title: { contains: search, mode: "insensitive" } },
-        { kbArticle: { contains: search, mode: "insensitive" } },
-        { products: { contains: search, mode: "insensitive" } },
-        { serverName: { contains: search, mode: "insensitive" } },
-      ];
+      const pattern = `%${search}%`;
+      conditions.push(
+        Prisma.sql`("title" ILIKE ${pattern} OR "kbArticle" ILIKE ${pattern} OR "products" ILIKE ${pattern} OR "serverName" ILIKE ${pattern})`
+      );
     }
-    if (serverName !== "all") where.serverName = serverName;
-    if (classification !== "all") where.classification = classification;
-    if (severity !== "all") where.msrcSeverity = severity;
-    if (approved === "approved") where.isApproved = true;
-    else if (approved === "declined") where.isDeclined = true;
+    if (serverName !== "all") {
+      conditions.push(Prisma.sql`"serverName" = ${serverName}`);
+    }
+    if (classification !== "all") {
+      conditions.push(Prisma.sql`"classification" = ${classification}`);
+    }
+    if (severity !== "all") {
+      conditions.push(Prisma.sql`"msrcSeverity" = ${severity}`);
+    }
+    if (approved === "approved") {
+      conditions.push(Prisma.sql`"isApproved" = true`);
+    } else if (approved === "declined") {
+      conditions.push(Prisma.sql`"isDeclined" = true`);
+    }
 
-    const INVENTORY_SORT_FIELDS = new Set([
-      "title",
-      "serverName",
-      "kbArticle",
-      "classification",
-      "msrcSeverity",
-      "isApproved",
-      "arrivalDate",
-    ]);
-    const invOrderBy: Prisma.PatchInventoryOrderByWithRelationInput[] =
-      INVENTORY_SORT_FIELDS.has(sortBy)
-        ? [{ [sortBy]: sortDir }, { title: "asc" }]
-        : [{ arrivalDate: "desc" }, { title: "asc" }];
+    const whereClause =
+      conditions.length > 0
+        ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}`
+        : Prisma.empty;
 
-    const [items, total] = await Promise.all([
-      prisma.patchInventory.findMany({
-        where,
-        orderBy: invOrderBy,
-        skip,
-        take: pageSize,
-      }),
-      prisma.patchInventory.count({ where }),
+    const INVENTORY_SORT_COLUMNS: Record<string, string> = {
+      title: '"title"',
+      kbArticle: '"kbArticle"',
+      classification: '"classification"',
+      msrcSeverity: '"msrcSeverity"',
+      isApproved: '"isApproved"',
+      arrivalDate: '"arrivalDate"',
+    };
+    const sortColumn = INVENTORY_SORT_COLUMNS[sortBy] ?? '"arrivalDate"';
+    const sortDirection = sortDir === "asc" ? "ASC" : "DESC";
+    const nullsOrder =
+      sortColumn === '"arrivalDate"'
+        ? sortDirection === "DESC"
+          ? " NULLS LAST"
+          : " NULLS FIRST"
+        : "";
+    const outerOrderBy = Prisma.raw(
+      `ORDER BY ${sortColumn} ${sortDirection}${nullsOrder}, "title" ASC`
+    );
+
+    const [items, countRows] = await Promise.all([
+      prisma.$queryRaw<
+        Array<{
+          serverName: string;
+          updateId: string;
+          revisionNumber: number;
+          title: string;
+          kbArticle: string | null;
+          products: string | null;
+          classification: string;
+          arrivalDate: Date | null;
+          msrcSeverity: string;
+          isApproved: boolean;
+          isDeclined: boolean;
+          isSuperseded: boolean;
+          updateType: string;
+          description: string;
+        }>
+      >(Prisma.sql`
+        WITH deduped AS (
+          SELECT DISTINCT ON ("updateId")
+            "serverName",
+            "updateId",
+            "revisionNumber",
+            "title",
+            "kbArticle",
+            "products",
+            "classification",
+            "arrivalDate",
+            "msrcSeverity",
+            "isApproved",
+            "isDeclined",
+            "isSuperseded",
+            "updateType",
+            "description"
+          FROM "PatchInventory"
+          ${whereClause}
+          ORDER BY "updateId", "isLatestRevision" DESC, "revisionNumber" DESC, "isApproved" DESC, "arrivalDate" DESC NULLS LAST
+        )
+        SELECT *
+        FROM deduped
+        ${outerOrderBy}
+        LIMIT ${pageSize} OFFSET ${skip}
+      `),
+      prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
+        SELECT COUNT(DISTINCT "updateId")::int AS count
+        FROM "PatchInventory"
+        ${whereClause}
+      `),
     ]);
+
+    const total = countRows[0]?.count ?? 0;
 
     return NextResponse.json({
       items,

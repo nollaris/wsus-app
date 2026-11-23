@@ -71,7 +71,6 @@ const STATE_BADGE: Record<string, string> = {
 
 type InventorySortKey =
   | "title"
-  | "serverName"
   | "kbArticle"
   | "classification"
   | "msrcSeverity"
@@ -391,7 +390,6 @@ export function PatchesBrowser({
               <TableHeader>
                 <TableRow>
                   <SortableTableHead label="Title" sortKey="title" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
-                  <SortableTableHead label="Server" sortKey="serverName" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
                   <SortableTableHead label="KB" sortKey="kbArticle" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
                   <SortableTableHead label="Classification" sortKey="classification" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
                   <SortableTableHead label="Severity" sortKey="msrcSeverity" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
@@ -403,27 +401,24 @@ export function PatchesBrowser({
                 {loading ? (
                   Array.from({ length: 8 }).map((_, idx) => (
                     <TableRow key={idx}>
-                      <TableCell colSpan={7}>
+                      <TableCell colSpan={6}>
                         <Skeleton className="h-6 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : inventoryItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                       No patches match your filters.
                     </TableCell>
                   </TableRow>
                 ) : (
                   inventoryItems.map((p) => (
-                    <TableRow key={`${p.serverName}-${p.updateId}-${p.revisionNumber}`}>
+                    <TableRow key={p.updateId}>
                       <TableCell className="max-w-[240px] lg:max-w-sm xl:max-w-md whitespace-normal font-medium">
                         <span className="line-clamp-2" title={p.title}>
                           {p.title}
                         </span>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {p.serverName || "-"}
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {p.kbArticle ? `KB${p.kbArticle}` : "-"}

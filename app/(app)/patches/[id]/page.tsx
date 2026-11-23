@@ -58,10 +58,10 @@ export default async function PatchDetailPage({
   const { id } = await params;
   const updateId = decodeURIComponent(id);
 
-  const [patch, clientStatuses] = await Promise.all([
-    prisma.patchInventory.findFirst({
+  const [patchRevisions, clientStatuses] = await Promise.all([
+    prisma.patchInventory.findMany({
       where: { updateId },
-      orderBy: [{ isLatestRevision: "desc" }, { revisionNumber: "desc" }],
+      orderBy: [{ isLatestRevision: "desc" }, { revisionNumber: "desc" }, { serverName: "asc" }],
     }),
     prisma.clientPatchStatus.findMany({
       where: { updateId },
@@ -78,9 +78,22 @@ export default async function PatchDetailPage({
     }),
   ]);
 
+  const patch = patchRevisions[0];
   if (!patch) {
     notFound();
   }
+
+  const serverEntries = Array.from(
+    patchRevisions
+      .reduce((map, row) => {
+        if (!map.has(row.serverName)) {
+          map.set(row.serverName, row);
+        }
+        return map;
+      }, new Map<string, (typeof patchRevisions)[number]>())
+      .values()
+  ).sort((a, b) => a.serverName.localeCompare(b.serverName));
+  const serverNames = serverEntries.map((s) => s.serverName).filter(Boolean);
 
   return (
     <div className="space-y-6">
@@ -100,8 +113,11 @@ export default async function PatchDetailPage({
               ) : null}
               {patch.classification} &middot;{" "}
               <span className="font-mono text-xs">{patch.updateId}</span>
-              {patch.serverName ? (
-                <span className="font-mono text-xs"> &middot; Server: {patch.serverName}</span>
+              {serverNames.length > 0 ? (
+                <span className="font-mono text-xs">
+                  {" "}
+                  &middot; {serverNames.length === 1 ? "Server" : "Servers"}: {serverNames.join(", ")}
+                </span>
               ) : null}
             </p>
           </div>
@@ -182,6 +198,78 @@ export default async function PatchDetailPage({
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
             {patch.description || "No description available."}
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            WSUS Servers ({serverEntries.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border bg-background">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Server</TableHead>
+                  <TableHead>Revision</TableHead>
+                  <TableHead>Arrival Date</TableHead>
+                  <TableHead className="text-right">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {serverEntries.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={4}
+                      className="h-16 text-center text-muted-foreground"
+                    >
+                      No server records for this patch.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  serverEntries.map((s) => (
+                    <TableRow key={`${s.serverName}-${s.revisionNumber}`}>
+                      <TableCell className="font-mono text-xs font-medium">
+                        {s.serverName || "-"}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        Rev {s.revisionNumber}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {s.arrivalDate
+                          ? s.arrivalDate.toISOString().replace("T", " ").slice(0, 19)
+                          : "-"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {s.isApproved && (
+                            <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-700">
+                              Approved
+                            </Badge>
+                          )}
+                          {s.isDeclined && (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              Declined
+                            </Badge>
+                          )}
+                          {s.isSuperseded && (
+                            <Badge variant="outline" className="text-xs">
+                              Superseded
+                            </Badge>
+                          )}
+                          {!s.isApproved && !s.isDeclined && !s.isSuperseded && (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 

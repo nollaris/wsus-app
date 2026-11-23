@@ -61,6 +61,16 @@ type SortKey =
   | "failed"
   | "complianceScore";
 
+function compareStrings(a: string, b: string) {
+  const la = a.toLowerCase();
+  const lb = b.toLowerCase();
+  if (la < lb) return -1;
+  if (la > lb) return 1;
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function compareIp(a: string, b: string) {
   const pa = a.split(".").map(Number);
   const pb = b.split(".").map(Number);
@@ -129,13 +139,7 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
         return false;
       }
       if (!q) return true;
-      return (
-        c.computerName.toLowerCase().includes(q) ||
-        c.ipAddress.toLowerCase().includes(q) ||
-        c.osDescription.toLowerCase().includes(q) ||
-        c.clientVersion.toLowerCase().includes(q) ||
-        c.serverName.toLowerCase().includes(q)
-      );
+      return c.computerName.toLowerCase().includes(q);
     });
   }, [clients, search, serverFilter, groupFilter]);
 
@@ -166,18 +170,19 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
     list.sort((a, b) => {
       switch (sortKey) {
         case "computerName":
-          return a.computerName.localeCompare(b.computerName) * mul;
+          return compareStrings(a.computerName, b.computerName) * mul;
         case "serverName":
-          return a.serverName.localeCompare(b.serverName) * mul;
+          return compareStrings(a.serverName, b.serverName) * mul;
         case "ipAddress":
           return compareIp(a.ipAddress, b.ipAddress) * mul;
         case "osDescription":
-          return a.osDescription.localeCompare(b.osDescription) * mul;
+          return compareStrings(a.osDescription, b.osDescription) * mul;
         case "assignedTargetGroups":
           return (
-            splitTargetGroups(a.assignedTargetGroups)
-              .join(", ")
-              .localeCompare(splitTargetGroups(b.assignedTargetGroups).join(", ")) * mul
+            compareStrings(
+              splitTargetGroups(a.assignedTargetGroups).join(", "),
+              splitTargetGroups(b.assignedTargetGroups).join(", ")
+            ) * mul
           );
         case "lastSyncTime": {
           const ta = a.lastSyncTime ? Date.parse(a.lastSyncTime) : 0;
@@ -277,7 +282,7 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
         <div className="relative w-full sm:max-w-sm">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search hostname, IP, OS, or version..."
+            placeholder="Search computer name..."
             className="pl-9"
             value={search}
             onChange={(e) => {

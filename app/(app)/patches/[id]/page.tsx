@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Monitor } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PatchClientsTable } from "@/components/patch-clients-table";
 import {
   Table,
   TableBody,
@@ -41,13 +42,6 @@ const SEVERITY_BADGE: Record<string, string> = {
   Important: "bg-orange-500/15 text-orange-700",
   Moderate: "bg-amber-500/15 text-amber-700",
   Unspecified: "bg-muted text-muted-foreground",
-};
-
-const STATE_BADGE: Record<string, string> = {
-  Installed: "bg-emerald-500/15 text-emerald-700",
-  NotInstalled: "bg-amber-500/15 text-amber-700",
-  Failed: "bg-destructive/15 text-destructive",
-  Downloaded: "bg-sky-500/15 text-sky-700",
 };
 
 export default async function PatchDetailPage({
@@ -280,58 +274,7 @@ export default async function PatchDetailPage({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border bg-background">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Computer Name</TableHead>
-                  <TableHead>Server</TableHead>
-                  <TableHead>IP Address</TableHead>
-                  <TableHead>Approval</TableHead>
-                  <TableHead className="text-right">State</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {clientStatuses.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={5}
-                      className="h-24 text-center text-muted-foreground"
-                    >
-                      No client installation records for this patch.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  clientStatuses.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell className="font-medium">
-                        <Link
-                          href={`/clients/${c.computerTargetId}`}
-                          className="inline-flex items-center gap-2 text-primary hover:underline"
-                        >
-                          <Monitor className="h-3.5 w-3.5 text-muted-foreground" />
-                          {c.computerName}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {c.serverName || "-"}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{c.ipAddress}</TableCell>
-                      <TableCell className="text-xs">{c.approvalAction}</TableCell>
-                      <TableCell className="text-right">
-                        <Badge
-                          variant="secondary"
-                          className={STATE_BADGE[c.installationState] || ""}
-                        >
-                          {c.installationState}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+          <PatchClientsTable clientStatuses={clientStatuses} />
         </CardContent>
       </Card>
     </div>

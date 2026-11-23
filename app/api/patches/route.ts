@@ -11,6 +11,9 @@ export async function GET(request: Request) {
   const severity = searchParams.get("severity") ?? "all";
   const approved = searchParams.get("approved") ?? "all";
   const state = searchParams.get("state") ?? "all";
+  const sortBy = searchParams.get("sortBy") ?? "";
+  const sortDir: Prisma.SortOrder =
+    searchParams.get("sortDir") === "asc" ? "asc" : "desc";
   const page = Math.max(1, Number.parseInt(searchParams.get("page") ?? "1", 10) || 1);
   const pageSize = Math.min(
     100,
@@ -34,10 +37,24 @@ export async function GET(request: Request) {
     if (approved === "approved") where.isApproved = true;
     else if (approved === "declined") where.isDeclined = true;
 
+    const INVENTORY_SORT_FIELDS = new Set([
+      "title",
+      "serverName",
+      "kbArticle",
+      "classification",
+      "msrcSeverity",
+      "isApproved",
+      "arrivalDate",
+    ]);
+    const invOrderBy: Prisma.PatchInventoryOrderByWithRelationInput[] =
+      INVENTORY_SORT_FIELDS.has(sortBy)
+        ? [{ [sortBy]: sortDir }, { title: "asc" }]
+        : [{ arrivalDate: "desc" }, { title: "asc" }];
+
     const [items, total] = await Promise.all([
       prisma.patchInventory.findMany({
         where,
-        orderBy: [{ arrivalDate: "desc" }, { title: "asc" }],
+        orderBy: invOrderBy,
         skip,
         take: pageSize,
       }),
@@ -66,10 +83,23 @@ export async function GET(request: Request) {
   if (classification !== "all") where.classification = classification;
   if (state !== "all") where.installationState = state;
 
+  const STATUS_SORT_FIELDS = new Set([
+    "computerName",
+    "serverName",
+    "updateTitle",
+    "kbArticle",
+    "classification",
+    "installationState",
+  ]);
+  const statusOrderBy: Prisma.ClientPatchStatusOrderByWithRelationInput[] =
+    STATUS_SORT_FIELDS.has(sortBy)
+      ? [{ [sortBy]: sortDir }, { updateTitle: "asc" }]
+      : [{ computerName: "asc" }, { updateTitle: "asc" }];
+
   const [items, total] = await Promise.all([
     prisma.clientPatchStatus.findMany({
       where,
-      orderBy: [{ computerName: "asc" }, { updateTitle: "asc" }],
+      orderBy: statusOrderBy,
       skip,
       take: pageSize,
     }),

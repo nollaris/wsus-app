@@ -17,10 +17,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead, type SortDir } from "@/components/sortable-table-head";
 
 export interface ClientPatchRow {
   id: number;
@@ -38,11 +38,30 @@ const STATE_BADGE: Record<string, string> = {
   Downloaded: "bg-sky-500/15 text-sky-700",
 };
 
+type PatchSortKey =
+  | "updateTitle"
+  | "kbArticle"
+  | "classification"
+  | "approvalAction"
+  | "installationState";
+
 export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
+  const [sortKey, setSortKey] = useState<PatchSortKey>("installationState");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  function handleSort(key: PatchSortKey) {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+    setPage(1);
+  }
 
   const states = useMemo(() => {
     return Array.from(new Set(patches.map((p) => p.installationState))).sort();
@@ -63,12 +82,23 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
     });
   }, [patches, search, stateFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const sorted = useMemo(() => {
+    const list = [...filtered];
+    const mul = sortDir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      const va = a[sortKey] ?? "";
+      const vb = b[sortKey] ?? "";
+      return va.localeCompare(vb) * mul;
+    });
+    return list;
+  }, [filtered, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, currentPage, pageSize]);
+    return sorted.slice(start, start + pageSize);
+  }, [sorted, currentPage, pageSize]);
 
   return (
     <div className="space-y-4">
@@ -121,11 +151,11 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Update Title</TableHead>
-              <TableHead>KB</TableHead>
-              <TableHead>Classification</TableHead>
-              <TableHead>Approval</TableHead>
-              <TableHead className="text-right">State</TableHead>
+              <SortableTableHead label="Update Title" sortKey="updateTitle" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTableHead label="KB" sortKey="kbArticle" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTableHead label="Classification" sortKey="classification" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTableHead label="Approval" sortKey="approvalAction" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTableHead label="State" sortKey="installationState" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
             </TableRow>
           </TableHeader>
           <TableBody>

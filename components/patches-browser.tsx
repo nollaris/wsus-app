@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SortableTableHead, type SortDir } from "@/components/sortable-table-head";
 
 interface PatchInventoryItem {
   serverName: string;
@@ -68,6 +69,23 @@ const STATE_BADGE: Record<string, string> = {
   Downloaded: "bg-sky-500/15 text-sky-700",
 };
 
+type InventorySortKey =
+  | "title"
+  | "serverName"
+  | "kbArticle"
+  | "classification"
+  | "msrcSeverity"
+  | "isApproved"
+  | "arrivalDate";
+
+type StatusSortKey =
+  | "computerName"
+  | "serverName"
+  | "updateTitle"
+  | "kbArticle"
+  | "classification"
+  | "installationState";
+
 export function PatchesBrowser({
   classifications,
   severities,
@@ -87,7 +105,33 @@ export function PatchesBrowser({
   const [severity, setSeverity] = useState("all");
   const [approved, setApproved] = useState("all");
   const [stateFilter, setStateFilter] = useState("all");
+  const [invSort, setInvSort] = useState<{ key: InventorySortKey; dir: SortDir }>({
+    key: "arrivalDate",
+    dir: "desc",
+  });
+  const [statusSort, setStatusSort] = useState<{ key: StatusSortKey; dir: SortDir }>({
+    key: "computerName",
+    dir: "asc",
+  });
   const [page, setPage] = useState(1);
+
+  function handleInvSort(key: InventorySortKey) {
+    setInvSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "arrivalDate" ? "desc" : "asc" }
+    );
+    setPage(1);
+  }
+
+  function handleStatusSort(key: StatusSortKey) {
+    setStatusSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: "asc" }
+    );
+    setPage(1);
+  }
 
   const [loading, setLoading] = useState(true);
   const [inventoryItems, setInventoryItems] = useState<PatchInventoryItem[]>([]);
@@ -117,8 +161,12 @@ export function PatchesBrowser({
       if (tab === "inventory") {
         if (severity !== "all") params.set("severity", severity);
         if (approved !== "all") params.set("approved", approved);
+        params.set("sortBy", invSort.key);
+        params.set("sortDir", invSort.dir);
       } else {
         if (stateFilter !== "all") params.set("state", stateFilter);
+        params.set("sortBy", statusSort.key);
+        params.set("sortDir", statusSort.dir);
       }
 
       const res = await fetch(`/api/patches?${params.toString()}`);
@@ -134,7 +182,18 @@ export function PatchesBrowser({
     } finally {
       setLoading(false);
     }
-  }, [tab, page, debouncedSearch, serverFilter, classification, severity, approved, stateFilter]);
+  }, [
+    tab,
+    page,
+    debouncedSearch,
+    serverFilter,
+    classification,
+    severity,
+    approved,
+    stateFilter,
+    invSort,
+    statusSort,
+  ]);
 
   useEffect(() => {
     fetchData();
@@ -317,12 +376,12 @@ export function PatchesBrowser({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Server</TableHead>
-                  <TableHead>KB</TableHead>
-                  <TableHead>Classification</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Status</TableHead>
+                  <SortableTableHead label="Title" sortKey="title" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
+                  <SortableTableHead label="Server" sortKey="serverName" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
+                  <SortableTableHead label="KB" sortKey="kbArticle" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
+                  <SortableTableHead label="Classification" sortKey="classification" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
+                  <SortableTableHead label="Severity" sortKey="msrcSeverity" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
+                  <SortableTableHead label="Status" sortKey="isApproved" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
                   <TableHead className="text-right">Details</TableHead>
                 </TableRow>
               </TableHeader>
@@ -403,12 +462,12 @@ export function PatchesBrowser({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Computer</TableHead>
-                  <TableHead>Server</TableHead>
-                  <TableHead>Update Title</TableHead>
-                  <TableHead>KB</TableHead>
-                  <TableHead>Classification</TableHead>
-                  <TableHead className="text-right">State</TableHead>
+                  <SortableTableHead label="Computer" sortKey="computerName" activeKey={statusSort.key} dir={statusSort.dir} onSort={handleStatusSort} />
+                  <SortableTableHead label="Server" sortKey="serverName" activeKey={statusSort.key} dir={statusSort.dir} onSort={handleStatusSort} />
+                  <SortableTableHead label="Update Title" sortKey="updateTitle" activeKey={statusSort.key} dir={statusSort.dir} onSort={handleStatusSort} />
+                  <SortableTableHead label="KB" sortKey="kbArticle" activeKey={statusSort.key} dir={statusSort.dir} onSort={handleStatusSort} />
+                  <SortableTableHead label="Classification" sortKey="classification" activeKey={statusSort.key} dir={statusSort.dir} onSort={handleStatusSort} />
+                  <SortableTableHead label="State" sortKey="installationState" activeKey={statusSort.key} dir={statusSort.dir} onSort={handleStatusSort} align="right" />
                 </TableRow>
               </TableHeader>
               <TableBody>

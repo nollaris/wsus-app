@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Search, Monitor, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Search,
+  Monitor,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,10 +25,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead, type SortDir } from "@/components/sortable-table-head";
 
 export interface ClientRow {
   serverName: string;
@@ -44,12 +49,54 @@ export interface ClientRow {
   isFullyCompliant: boolean;
 }
 
+type SortKey =
+  | "computerName"
+  | "serverName"
+  | "ipAddress"
+  | "osDescription"
+  | "assignedTargetGroups"
+  | "lastSyncTime"
+  | "installed"
+  | "notInstalled"
+  | "failed"
+  | "complianceScore";
+
+function compareIp(a: string, b: string) {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  if (pa.length === 4 && pb.length === 4 && pa.every((n) => !Number.isNaN(n)) && pb.every((n) => !Number.isNaN(n))) {
+    for (let i = 0; i < 4; i++) {
+      if (pa[i] !== pb[i]) return pa[i] - pb[i];
+    }
+    return 0;
+  }
+  return a.localeCompare(b);
+}
+
 export function ClientsTable({ clients }: { clients: ClientRow[] }) {
   const [search, setSearch] = useState("");
   const [serverFilter, setServerFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
+  const [sortKey, setSortKey] = useState<SortKey>("computerName");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      const defaultDesc =
+        key === "installed" ||
+        key === "notInstalled" ||
+        key === "failed" ||
+        key === "complianceScore" ||
+        key === "lastSyncTime";
+      setSortDir(defaultDesc ? "desc" : "asc");
+    }
+    setPage(1);
+  }
 
   const servers = useMemo(() => {
     const set = new Set<string>();
@@ -113,12 +160,49 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
     };
   }, [filtered]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const sorted = useMemo(() => {
+    const list = [...filtered];
+    const mul = sortDir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      switch (sortKey) {
+        case "computerName":
+          return a.computerName.localeCompare(b.computerName) * mul;
+        case "serverName":
+          return a.serverName.localeCompare(b.serverName) * mul;
+        case "ipAddress":
+          return compareIp(a.ipAddress, b.ipAddress) * mul;
+        case "osDescription":
+          return a.osDescription.localeCompare(b.osDescription) * mul;
+        case "assignedTargetGroups":
+          return (
+            splitTargetGroups(a.assignedTargetGroups)
+              .join(", ")
+              .localeCompare(splitTargetGroups(b.assignedTargetGroups).join(", ")) * mul
+          );
+        case "lastSyncTime": {
+          const ta = a.lastSyncTime ? Date.parse(a.lastSyncTime) : 0;
+          const tb = b.lastSyncTime ? Date.parse(b.lastSyncTime) : 0;
+          return (ta - tb) * mul;
+        }
+        case "installed":
+          return (a.installed - b.installed) * mul;
+        case "notInstalled":
+          return (a.notInstalled - b.notInstalled) * mul;
+        case "failed":
+          return (a.failed - b.failed) * mul;
+        case "complianceScore":
+          return (a.complianceScore - b.complianceScore) * mul;
+      }
+    });
+    return list;
+  }, [filtered, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, currentPage, pageSize]);
+    return sorted.slice(start, start + pageSize);
+  }, [sorted, currentPage, pageSize]);
 
   return (
     <div className="space-y-4">
@@ -265,16 +349,16 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Computer Name</TableHead>
-              <TableHead>WSUS Server</TableHead>
-              <TableHead>IP Address</TableHead>
-              <TableHead>OS</TableHead>
-              <TableHead>Target Group</TableHead>
-              <TableHead>Last Sync</TableHead>
-              <TableHead className="text-right">Installed</TableHead>
-              <TableHead className="text-right">Pending</TableHead>
-              <TableHead className="text-right">Failed</TableHead>
-              <TableHead className="text-right">Compliance</TableHead>
+              <SortableTableHead label="Computer Name" sortKey="computerName" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTableHead label="WSUS Server" sortKey="serverName" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTableHead label="IP Address" sortKey="ipAddress" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTableHead label="OS" sortKey="osDescription" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTableHead label="Target Group" sortKey="assignedTargetGroups" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTableHead label="Last Sync" sortKey="lastSyncTime" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTableHead label="Installed" sortKey="installed" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
+              <SortableTableHead label="Pending" sortKey="notInstalled" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
+              <SortableTableHead label="Failed" sortKey="failed" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
+              <SortableTableHead label="Compliance" sortKey="complianceScore" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
             </TableRow>
           </TableHeader>
           <TableBody>

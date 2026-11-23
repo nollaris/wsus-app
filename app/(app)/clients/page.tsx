@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { ClientsTable, type ClientRow } from "@/components/clients-table";
-import { computeDeviceCompliance } from "@/lib/wsus-compliance";
+import { computeDeviceCompliance, resolveClientOsVersion, type OsPatchHint } from "@/lib/wsus-compliance";
 
 export const instant = false;
 
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ClientsPage() {
-  const [clients, patchCounts] = await Promise.all([
+  const [clients, patchCounts, osPatches] = await Promise.all([
     prisma.clientStatus.findMany({
       orderBy: { computerName: "asc" },
     }),
@@ -18,7 +18,30 @@ export default async function ClientsPage() {
       by: ["computerTargetId", "installationState"],
       _count: { id: true },
     }),
+    prisma.clientPatchStatus.findMany({
+      where: {
+        OR: [
+          { updateTitle: { contains: "Windows 11", mode: "insensitive" } },
+          { updateTitle: { contains: "Windows 10", mode: "insensitive" } },
+          { updateTitle: { contains: "server operating system", mode: "insensitive" } },
+          { updateTitle: { contains: "Windows Server", mode: "insensitive" } },
+        ],
+      },
+      select: {
+        computerTargetId: true,
+        updateTitle: true,
+        classification: true,
+        installationState: true,
+      },
+    }),
   ]);
+
+  const osPatchesByClient = new Map<string, OsPatchHint[]>();
+  for (const row of osPatches) {
+    const list = osPatchesByClient.get(row.computerTargetId);
+    if (list) list.push(row);
+    else osPatchesByClient.set(row.computerTargetId, [row]);
+  }
 
   const countsByClient = new Map<
     string,
@@ -57,7 +80,11 @@ export default async function ClientsPage() {
       computerTargetId: c.computerTargetId,
       computerName: c.computerName,
       ipAddress: c.ipAddress,
-      osDescription: c.osDescription,
+      osDescription: resolveClientOsVersion({
+        osDescription: c.osDescription,
+        osVersion: c.osVersion,
+        patches: osPatchesByClient.get(c.computerTargetId),
+      }),
       clientVersion: c.clientVersion,
       computerRole: c.computerRole,
       assignedTargetGroups: c.assignedTargetGroups,

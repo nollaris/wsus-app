@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ClientComplianceCharts } from "@/components/client-compliance-charts";
 import { ClientPatchesTable } from "@/components/client-patches-table";
-import { splitTargetGroups } from "@/lib/wsus-compliance";
+import { resolveClientOsVersion, splitTargetGroups } from "@/lib/wsus-compliance";
 
 export const instant = false;
 
@@ -53,6 +53,12 @@ export default async function ClientDetailPage({
     notFound();
   }
 
+  const resolvedOs = resolveClientOsVersion({
+    osDescription: client.osDescription,
+    osVersion: client.osVersion,
+    patches,
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -64,7 +70,7 @@ export default async function ClientDetailPage({
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">{client.computerName}</h1>
         <p className="text-sm text-muted-foreground font-mono">
-          {client.ipAddress} &middot; {client.osDescription}
+          {client.ipAddress} &middot; {resolvedOs}
           {client.serverName ? ` · Server: ${client.serverName}` : ""}
         </p>
       </div>

@@ -45,6 +45,10 @@ function emptyToNull(val?: string | null): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function getServerName(row: Record<string, string>): string {
+  return (row.ServerName ?? row.server_name ?? "").trim();
+}
+
 async function seedInBatches<T>(
   items: T[],
   batchSize: number,
@@ -68,6 +72,7 @@ async function main() {
   const classifications = readCsv("Classifications.csv");
   await prisma.classification.createMany({
     data: classifications.map((r) => ({
+      serverName: getServerName(r),
       classificationId: r.ClassificationId,
       title: r.Title,
       description: r.Description ?? "",
@@ -81,6 +86,7 @@ async function main() {
   const products = readCsv("Products.csv");
   await prisma.product.createMany({
     data: products.map((r) => ({
+      serverName: getServerName(r),
       categoryId: r.CategoryId,
       title: r.Title,
       type: r.Type,
@@ -94,6 +100,7 @@ async function main() {
   const clients = readCsv("Client_Status.csv");
   await prisma.clientStatus.createMany({
     data: clients.map((r) => ({
+      serverName: getServerName(r),
       computerTargetId: r.ComputerTargetId,
       computerName: r.ComputerName,
       ipAddress: r.IPAddress,
@@ -114,6 +121,7 @@ async function main() {
   await seedInBatches(patches, 1000, (batch) =>
     prisma.patchInventory.createMany({
       data: batch.map((r) => ({
+        serverName: getServerName(r),
         updateId: r.UpdateId,
         revisionNumber: Number.parseInt(r.RevisionNumber, 10) || 0,
         title: r.Title ?? "",
@@ -141,6 +149,7 @@ async function main() {
     await seedInBatches(clientPatches, 1000, (batch) =>
       prisma.clientPatchStatus.createMany({
         data: batch.map((r) => ({
+          serverName: getServerName(r),
           computerName: r.ComputerName,
           computerTargetId: r.ComputerTargetId,
           ipAddress: r.IPAddress,
@@ -161,6 +170,7 @@ async function main() {
   const syncHistory = readCsv("Synchronization_History.csv");
   await prisma.synchronizationHistory.createMany({
     data: syncHistory.map((r) => ({
+      serverName: getServerName(r),
       synchronizationId: r.SynchronizationId,
       startTime: parseDate(r.StartTime),
       endTime: parseDate(r.EndTime),
@@ -177,7 +187,7 @@ async function main() {
   const syncSettings = readCsv("Synchronization_Settings.csv");
   await prisma.synchronizationSetting.createMany({
     data: syncSettings.map((r) => ({
-      serverName: r.ServerName,
+      serverName: getServerName(r),
       synchronizeAutomatically: parseBool(r.SynchronizeAutomatically),
       synchronizationTimeUtc: r.SynchronizationTimeUTC ?? "",
       synchronizationTimeLocal: r.SynchronizationTimeLocal ?? "",

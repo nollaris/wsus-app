@@ -28,6 +28,10 @@ function emptyToNull(val?: string | null): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function getServerName(row: Record<string, string>): string {
+  return (row.ServerName ?? row.server_name ?? "").trim();
+}
+
 async function seedInBatches<T>(
   items: T[],
   batchSize: number,
@@ -89,6 +93,7 @@ export async function importCsvBuffer(
         if (mode === "replace") await prisma.classification.deleteMany();
         const res = await prisma.classification.createMany({
           data: rows.map((r) => ({
+            serverName: getServerName(r),
             classificationId: r.ClassificationId,
             title: r.Title ?? "",
             description: r.Description ?? "",
@@ -110,6 +115,7 @@ export async function importCsvBuffer(
         if (mode === "replace") await prisma.product.deleteMany();
         const res = await prisma.product.createMany({
           data: rows.map((r) => ({
+            serverName: getServerName(r),
             categoryId: r.CategoryId,
             title: r.Title ?? "",
             type: r.Type ?? "",
@@ -131,6 +137,7 @@ export async function importCsvBuffer(
         if (mode === "replace") await prisma.clientStatus.deleteMany();
         const res = await prisma.clientStatus.createMany({
           data: rows.map((r) => ({
+            serverName: getServerName(r),
             computerTargetId: r.ComputerTargetId,
             computerName: r.ComputerName ?? "",
             ipAddress: r.IPAddress ?? "",
@@ -159,6 +166,7 @@ export async function importCsvBuffer(
         const count = await seedInBatches(rows, 1000, (batch) =>
           prisma.patchInventory.createMany({
             data: batch.map((r) => ({
+              serverName: getServerName(r),
               updateId: r.UpdateId,
               revisionNumber: Number.parseInt(r.RevisionNumber, 10) || 0,
               title: r.Title ?? "",
@@ -192,6 +200,7 @@ export async function importCsvBuffer(
         const count = await seedInBatches(rows, 1000, (batch) =>
           prisma.clientPatchStatus.createMany({
             data: batch.map((r) => ({
+              serverName: getServerName(r),
               computerName: r.ComputerName ?? "",
               computerTargetId: r.ComputerTargetId ?? "",
               ipAddress: r.IPAddress ?? "",
@@ -219,6 +228,7 @@ export async function importCsvBuffer(
         if (mode === "replace") await prisma.synchronizationHistory.deleteMany();
         const res = await prisma.synchronizationHistory.createMany({
           data: rows.map((r) => ({
+            serverName: getServerName(r),
             synchronizationId: r.SynchronizationId,
             startTime: parseDate(r.StartTime),
             endTime: parseDate(r.EndTime),
@@ -243,7 +253,7 @@ export async function importCsvBuffer(
         if (mode === "replace") await prisma.synchronizationSetting.deleteMany();
         const res = await prisma.synchronizationSetting.createMany({
           data: rows.map((r) => ({
-            serverName: r.ServerName,
+            serverName: getServerName(r),
             synchronizeAutomatically: parseBool(r.SynchronizeAutomatically),
             synchronizationTimeUtc: r.SynchronizationTimeUTC ?? "",
             synchronizationTimeLocal: r.SynchronizationTimeLocal ?? "",

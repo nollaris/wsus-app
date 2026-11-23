@@ -7,6 +7,7 @@ export async function GET(request: Request) {
   const tab = searchParams.get("tab") === "status" ? "status" : "inventory";
   const search = (searchParams.get("search") ?? "").trim();
   const classification = searchParams.get("classification") ?? "all";
+  const serverName = searchParams.get("serverName") ?? "all";
   const severity = searchParams.get("severity") ?? "all";
   const approved = searchParams.get("approved") ?? "all";
   const state = searchParams.get("state") ?? "all";
@@ -24,8 +25,10 @@ export async function GET(request: Request) {
         { title: { contains: search, mode: "insensitive" } },
         { kbArticle: { contains: search, mode: "insensitive" } },
         { products: { contains: search, mode: "insensitive" } },
+        { serverName: { contains: search, mode: "insensitive" } },
       ];
     }
+    if (serverName !== "all") where.serverName = serverName;
     if (classification !== "all") where.classification = classification;
     if (severity !== "all") where.msrcSeverity = severity;
     if (approved === "approved") where.isApproved = true;
@@ -56,8 +59,10 @@ export async function GET(request: Request) {
       { computerName: { contains: search, mode: "insensitive" } },
       { updateTitle: { contains: search, mode: "insensitive" } },
       { kbArticle: { contains: search, mode: "insensitive" } },
+      { serverName: { contains: search, mode: "insensitive" } },
     ];
   }
+  if (serverName !== "all") where.serverName = serverName;
   if (classification !== "all") where.classification = classification;
   if (state !== "all") where.installationState = state;
 

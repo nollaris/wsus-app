@@ -100,32 +100,6 @@ function LoginForm() {
               />
             </div>
           </div>
-          <div className="rounded-lg border bg-muted/50 p-3 text-xs text-muted-foreground">
-            <div className="font-medium text-foreground mb-1">
-              Sample Credentials
-            </div>
-            <div className="flex items-center justify-between">
-              <span>
-                Username: <code className="font-mono font-semibold">admin</code>
-              </span>
-              <span>
-                Password:{" "}
-                <code className="font-mono font-semibold">P@ssw0rd</code>
-              </span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => {
-                  setUsername("admin");
-                  setPassword("P@ssw0rd");
-                }}
-              >
-                Fill
-              </Button>
-            </div>
-          </div>
         </CardContent>
         <CardFooter>
           <Button type="submit" className="w-full" disabled={loading}>

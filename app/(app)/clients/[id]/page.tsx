@@ -47,6 +47,7 @@ export default async function ClientDetailPage({
         <h1 className="text-2xl font-bold tracking-tight">{client.computerName}</h1>
         <p className="text-sm text-muted-foreground font-mono">
           {client.ipAddress} &middot; {client.osDescription}
+          {client.serverName ? ` · Server: ${client.serverName}` : ""}
         </p>
       </div>
 

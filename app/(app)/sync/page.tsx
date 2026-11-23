@@ -19,8 +19,8 @@ import {
 export const instant = false;
 
 export default async function SyncCatalogPage() {
-  const [settings, history, products, classifications] = await Promise.all([
-    prisma.synchronizationSetting.findFirst(),
+  const [settingsList, history, products, classifications] = await Promise.all([
+    prisma.synchronizationSetting.findMany({ orderBy: { serverName: "asc" } }),
     prisma.synchronizationHistory.findMany({
       orderBy: { startTime: "desc" },
     }),
@@ -40,8 +40,8 @@ export default async function SyncCatalogPage() {
       </div>
 
       {/* Sync Settings */}
-      {settings && (
-        <Card>
+      {settingsList.map((settings) => (
+        <Card key={settings.serverName}>
           <CardHeader>
             <CardTitle>Synchronization Settings</CardTitle>
             <CardDescription>
@@ -82,7 +82,7 @@ export default async function SyncCatalogPage() {
             </div>
           </CardContent>
         </Card>
-      )}
+      ))}
 
       {/* Products & Classifications */}
       <div className="grid gap-4 lg:grid-cols-2">
@@ -96,6 +96,7 @@ export default async function SyncCatalogPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Title</TableHead>
+                  <TableHead>Server</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Description</TableHead>
                 </TableRow>
@@ -104,6 +105,9 @@ export default async function SyncCatalogPage() {
                 {products.map((p) => (
                   <TableRow key={p.categoryId}>
                     <TableCell className="font-medium">{p.title}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {p.serverName || "-"}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline">{p.type}</Badge>
                     </TableCell>
@@ -127,6 +131,7 @@ export default async function SyncCatalogPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Title</TableHead>
+                  <TableHead>Server</TableHead>
                   <TableHead>Description</TableHead>
                 </TableRow>
               </TableHeader>
@@ -135,6 +140,9 @@ export default async function SyncCatalogPage() {
                   <TableRow key={c.classificationId}>
                     <TableCell className="font-medium whitespace-nowrap">
                       {c.title}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                      {c.serverName || "-"}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       <span className="line-clamp-2">{c.description}</span>
@@ -158,6 +166,7 @@ export default async function SyncCatalogPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Server</TableHead>
                   <TableHead>Start Time</TableHead>
                   <TableHead>End Time</TableHead>
                   <TableHead>Trigger</TableHead>
@@ -168,6 +177,9 @@ export default async function SyncCatalogPage() {
               <TableBody>
                 {history.map((h) => (
                   <TableRow key={h.synchronizationId}>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {h.serverName || "-"}
+                    </TableCell>
                     <TableCell className="font-mono text-xs">
                       {h.startTime
                         ? h.startTime.toISOString().replace("T", " ").slice(0, 19)

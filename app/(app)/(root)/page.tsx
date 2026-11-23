@@ -37,6 +37,7 @@ export default async function DashboardPage() {
     severityGroups,
     recentSyncs,
     attentionClientsRaw,
+    syncSettings,
   ] = await Promise.all([
     prisma.clientStatus.count(),
     prisma.patchInventory.count(),
@@ -61,6 +62,10 @@ export default async function DashboardPage() {
         installationState: { in: ["Failed", "NotInstalled"] },
       },
       _count: { id: true },
+    }),
+    prisma.synchronizationSetting.findMany({
+      orderBy: { serverName: "asc" },
+      select: { serverName: true },
     }),
   ]);
 
@@ -103,14 +108,26 @@ export default async function DashboardPage() {
     .slice(0, 6);
 
   const latestSync = recentSyncs[0];
+  const serverNames = syncSettings.map((s) => s.serverName).filter(Boolean);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">WSUS Dashboard</h1>
-        <p className="text-muted-foreground">
-          Overview of managed endpoints, patch compliance, and synchronization status.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">WSUS Dashboard</h1>
+          <p className="text-muted-foreground">
+            Overview of managed endpoints, patch compliance, and synchronization status.
+          </p>
+        </div>
+        {serverNames.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {serverNames.map((name) => (
+              <Badge key={name} variant="outline" className="font-mono text-xs">
+                Server: {name}
+              </Badge>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* KPI Cards */}

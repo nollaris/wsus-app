@@ -16,22 +16,29 @@ model User {
 }
 
 model Classification {
+  serverName       String    @default("")
   classificationId String    @id
   title            String
   description      String
   arrivalDate      DateTime?
   releaseNotes     String?
+
+  @@index([serverName])
 }
 
 model Product {
+  serverName  String    @default("")
   categoryId  String    @id
   title       String
   type        String
   description String
   arrivalDate DateTime?
+
+  @@index([serverName])
 }
 
 model ClientStatus {
+  serverName             String    @default("")
   computerTargetId       String    @id
   computerName           String
   ipAddress              String
@@ -44,10 +51,12 @@ model ClientStatus {
   lastSyncTime           DateTime?
   lastReportedStatusTime DateTime?
 
+  @@index([serverName])
   @@index([computerName])
 }
 
 model PatchInventory {
+  serverName       String    @default("")
   updateId         String
   revisionNumber   Int
   title            String
@@ -65,6 +74,7 @@ model PatchInventory {
   description      String
 
   @@id([updateId, revisionNumber])
+  @@index([serverName])
   @@index([classification])
   @@index([msrcSeverity])
   @@index([kbArticle])
@@ -73,6 +83,7 @@ model PatchInventory {
 
 model ClientPatchStatus {
   id                    Int     @id @default(autoincrement())
+  serverName            String  @default("")
   computerName          String
   computerTargetId      String
   ipAddress             String
@@ -85,6 +96,7 @@ model ClientPatchStatus {
   approvalAction        String
   approvalTargetGroupId String
 
+  @@index([serverName])
   @@index([computerTargetId])
   @@index([updateId])
   @@index([installationState])
@@ -93,6 +105,7 @@ model ClientPatchStatus {
 }
 
 model SynchronizationHistory {
+  serverName        String    @default("")
   synchronizationId String    @id
   startTime         DateTime?
   endTime           DateTime?
@@ -102,6 +115,7 @@ model SynchronizationHistory {
   error             String?
   errorText         String?
 
+  @@index([serverName])
   @@index([startTime])
 }
 

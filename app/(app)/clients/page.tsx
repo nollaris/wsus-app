@@ -39,6 +39,7 @@ export default async function ClientsPage() {
       failed: 0,
     };
     return {
+      serverName: c.serverName,
       computerTargetId: c.computerTargetId,
       computerName: c.computerName,
       ipAddress: c.ipAddress,

@@ -47,6 +47,7 @@ export default async function PatchDetailPage({
       orderBy: [{ installationState: "asc" }, { computerName: "asc" }],
       select: {
         id: true,
+        serverName: true,
         computerTargetId: true,
         computerName: true,
         ipAddress: true,
@@ -78,6 +79,9 @@ export default async function PatchDetailPage({
               ) : null}
               {patch.classification} &middot;{" "}
               <span className="font-mono text-xs">{patch.updateId}</span>
+              {patch.serverName ? (
+                <span className="font-mono text-xs"> &middot; Server: {patch.serverName}</span>
+              ) : null}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -172,6 +176,7 @@ export default async function PatchDetailPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Computer Name</TableHead>
+                  <TableHead>Server</TableHead>
                   <TableHead>IP Address</TableHead>
                   <TableHead>Approval</TableHead>
                   <TableHead className="text-right">State</TableHead>
@@ -181,7 +186,7 @@ export default async function PatchDetailPage({
                 {clientStatuses.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={4}
+                      colSpan={5}
                       className="h-24 text-center text-muted-foreground"
                     >
                       No client installation records for this patch.
@@ -198,6 +203,9 @@ export default async function PatchDetailPage({
                           <Monitor className="h-3.5 w-3.5 text-muted-foreground" />
                           {c.computerName}
                         </Link>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {c.serverName || "-"}
                       </TableCell>
                       <TableCell className="font-mono text-xs">{c.ipAddress}</TableCell>
                       <TableCell className="text-xs">{c.approvalAction}</TableCell>

@@ -4,7 +4,7 @@ import { PatchesBrowser } from "@/components/patches-browser";
 export const instant = false;
 
 export default async function PatchesPage() {
-  const [classifications, severities, states] = await Promise.all([
+  const [classifications, severities, states, servers] = await Promise.all([
     prisma.patchInventory.findMany({
       distinct: ["classification"],
       select: { classification: true },
@@ -20,6 +20,11 @@ export default async function PatchesPage() {
       select: { installationState: true },
       orderBy: { installationState: "asc" },
     }),
+    prisma.patchInventory.findMany({
+      distinct: ["serverName"],
+      select: { serverName: true },
+      orderBy: { serverName: "asc" },
+    }),
   ]);
 
   return (
@@ -34,6 +39,7 @@ export default async function PatchesPage() {
         classifications={classifications.map((c) => c.classification).filter(Boolean)}
         severities={severities.map((s) => s.msrcSeverity).filter(Boolean)}
         states={states.map((s) => s.installationState).filter(Boolean)}
+        servers={servers.map((s) => s.serverName).filter(Boolean)}
       />
     </div>
   );

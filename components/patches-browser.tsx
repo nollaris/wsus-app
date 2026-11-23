@@ -26,6 +26,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface PatchInventoryItem {
+  serverName: string;
   updateId: string;
   revisionNumber: number;
   title: string;
@@ -43,6 +44,7 @@ interface PatchInventoryItem {
 
 interface ClientPatchStatusItem {
   id: number;
+  serverName: string;
   computerName: string;
   ipAddress: string;
   updateTitle: string;
@@ -70,14 +72,17 @@ export function PatchesBrowser({
   classifications,
   severities,
   states,
+  servers,
 }: {
   classifications: string[];
   severities: string[];
   states: string[];
+  servers: string[];
 }) {
   const [tab, setTab] = useState<"inventory" | "status">("inventory");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [serverFilter, setServerFilter] = useState("all");
   const [classification, setClassification] = useState("all");
   const [severity, setSeverity] = useState("all");
   const [approved, setApproved] = useState("all");
@@ -107,6 +112,7 @@ export function PatchesBrowser({
         pageSize: "25",
       });
       if (debouncedSearch) params.set("search", debouncedSearch);
+      if (serverFilter !== "all") params.set("serverName", serverFilter);
       if (classification !== "all") params.set("classification", classification);
       if (tab === "inventory") {
         if (severity !== "all") params.set("severity", severity);
@@ -128,7 +134,7 @@ export function PatchesBrowser({
     } finally {
       setLoading(false);
     }
-  }, [tab, page, debouncedSearch, classification, severity, approved, stateFilter]);
+  }, [tab, page, debouncedSearch, serverFilter, classification, severity, approved, stateFilter]);
 
   useEffect(() => {
     fetchData();
@@ -163,6 +169,35 @@ export function PatchesBrowser({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {servers.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Label
+                  htmlFor="patches-server-filter"
+                  className="text-sm text-muted-foreground whitespace-nowrap"
+                >
+                  Server
+                </Label>
+                <Select
+                  value={serverFilter}
+                  onValueChange={(v) => {
+                    setServerFilter(v ?? "all");
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger id="patches-server-filter" className="w-[160px]">
+                    <SelectValue placeholder="WSUS Server" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Servers</SelectItem>
+                    {servers.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <Label
                 htmlFor="patches-classification-filter"
@@ -283,6 +318,7 @@ export function PatchesBrowser({
               <TableHeader>
                 <TableRow>
                   <TableHead>Title</TableHead>
+                  <TableHead>Server</TableHead>
                   <TableHead>KB</TableHead>
                   <TableHead>Classification</TableHead>
                   <TableHead>Severity</TableHead>
@@ -294,14 +330,14 @@ export function PatchesBrowser({
                 {loading ? (
                   Array.from({ length: 8 }).map((_, idx) => (
                     <TableRow key={idx}>
-                      <TableCell colSpan={6}>
+                      <TableCell colSpan={7}>
                         <Skeleton className="h-6 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : inventoryItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                       No patches match your filters.
                     </TableCell>
                   </TableRow>
@@ -310,6 +346,9 @@ export function PatchesBrowser({
                     <TableRow key={`${p.updateId}-${p.revisionNumber}`}>
                       <TableCell className="max-w-md font-medium">
                         <span className="line-clamp-2">{p.title}</span>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {p.serverName || "-"}
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {p.kbArticle ? `KB${p.kbArticle}` : "-"}
@@ -365,6 +404,7 @@ export function PatchesBrowser({
               <TableHeader>
                 <TableRow>
                   <TableHead>Computer</TableHead>
+                  <TableHead>Server</TableHead>
                   <TableHead>Update Title</TableHead>
                   <TableHead>KB</TableHead>
                   <TableHead>Classification</TableHead>
@@ -375,14 +415,14 @@ export function PatchesBrowser({
                 {loading ? (
                   Array.from({ length: 8 }).map((_, idx) => (
                     <TableRow key={idx}>
-                      <TableCell colSpan={5}>
+                      <TableCell colSpan={6}>
                         <Skeleton className="h-6 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : statusItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                       No client patch records match your filters.
                     </TableCell>
                   </TableRow>
@@ -391,6 +431,9 @@ export function PatchesBrowser({
                     <TableRow key={s.id}>
                       <TableCell className="font-medium text-xs">
                         {s.computerName}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {s.serverName || "-"}
                       </TableCell>
                       <TableCell className="max-w-md text-sm">
                         <span className="line-clamp-2">{s.updateTitle}</span>

@@ -46,7 +46,7 @@ export function AppShell({
   return (
     <SidebarProvider defaultOpen={defaultSidebarOpen}>
       <AppSidebar user={user} />
-      <SidebarInset className="min-w-0 overflow-x-hidden">
+      <SidebarInset className="min-w-0 overflow-x-clip">
         <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between gap-2 px-4 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 border-b bg-background/95 backdrop-blur">
           <div className="flex items-center gap-2">
             <SidebarTrigger className="-ml-1" />

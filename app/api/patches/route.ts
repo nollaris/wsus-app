@@ -55,6 +55,7 @@ export async function GET(request: Request) {
       classification: '"classification"',
       msrcSeverity: '"msrcSeverity"',
       isApproved: '"isApproved"',
+      isSuperseded: '"isSuperseded"',
       arrivalDate: '"arrivalDate"',
     };
     const sortColumn = INVENTORY_SORT_COLUMNS[sortBy] ?? '"arrivalDate"';

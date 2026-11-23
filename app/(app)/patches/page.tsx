@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 export default async function PatchesPage() {
-  const [classifications, severities, states, servers] = await Promise.all([
+  const [classifications, severities, servers] = await Promise.all([
     prisma.patchInventory.findMany({
       distinct: ["classification"],
       select: { classification: true },
@@ -19,11 +19,6 @@ export default async function PatchesPage() {
       distinct: ["msrcSeverity"],
       select: { msrcSeverity: true },
       orderBy: { msrcSeverity: "asc" },
-    }),
-    prisma.clientPatchStatus.findMany({
-      distinct: ["installationState"],
-      select: { installationState: true },
-      orderBy: { installationState: "asc" },
     }),
     prisma.patchInventory.findMany({
       distinct: ["serverName"],
@@ -37,13 +32,12 @@ export default async function PatchesPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Patches</h1>
         <p className="text-muted-foreground">
-          Browse the WSUS patch inventory catalog and per-client installation status.
+          Browse the WSUS patch inventory catalog.
         </p>
       </div>
       <PatchesBrowser
         classifications={classifications.map((c) => c.classification).filter(Boolean)}
         severities={severities.map((s) => s.msrcSeverity).filter(Boolean)}
-        states={states.map((s) => s.installationState).filter(Boolean)}
         servers={servers.map((s) => s.serverName).filter(Boolean)}
       />
     </div>

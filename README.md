@@ -1,36 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WSUS Portal (`wsus-app`)
 
-## Getting Started
+A Next.js + Prisma + PostgreSQL dashboard for browsing WSUS patch inventory, client compliance status, synchronization history, and importing WSUS CSV exports.
 
-First, run the development server:
+## Prerequisites
+
+- **Node.js** `20.19+`, `22.12+`, or `24.0+` (required by Prisma 7)
+- **pnpm**
+- **PostgreSQL** (e.g. running on `localhost:5432`)
+
+## Project Setup
+
+### 1. Install dependencies
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Configure environment variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Create a `.env` file in the project root:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```env
+DATABASE_URL="postgresql://wsus_user:wsus_pass_2026@localhost:5432/wsus_db?schema=public"
+AUTH_SECRET="replace-with-a-strong-random-secret"
+```
 
-## Learn More
+Make sure the PostgreSQL role and database exist (for example, using `psql` as a superuser):
 
-To learn more about Next.js, take a look at the following resources:
+```sql
+CREATE USER wsus_user WITH PASSWORD 'wsus_pass_2026' CREATEDB;
+CREATE DATABASE wsus_db OWNER wsus_user;
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 3. Generate Prisma client & push schema
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm prisma generate
+pnpm prisma db push
+```
 
-## Deploy on Vercel
+### 4. Seed the database
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Place your WSUS CSV export files inside a `data/` directory at the project root:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `data/Classifications.csv`
+- `data/Products.csv`
+- `data/Client_Status.csv`
+- `data/Patch_Inventory.csv`
+- `data/Client_Patch_Status.csv`
+- `data/Synchronization_History.csv`
+- `data/Synchronization_Settings.csv`
+
+Then run the seed script:
+
+```bash
+pnpm prisma db seed
+```
+
+This creates the default administrator account (`admin` / `P@ssw0rd`) and imports the CSV data into PostgreSQL.
+
+> **Note:** Additional WSUS CSV/ZIP exports can also be uploaded from the `/import` page in the web UI after signing in.
+
+### 5. Run the development server
+
+```bash
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser and sign in at `/login`.
+
+## Available Scripts
+
+| Command | Description |
+| --- | --- |
+| `pnpm dev` | Start the Next.js development server |
+| `pnpm build` | Build the application for production |
+| `pnpm start` | Start the production server |
+| `pnpm lint` | Run ESLint |

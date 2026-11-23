@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  role         String   @default("admin")
+  createdAt    DateTime @default(now())
+}
+
+model Classification {
+  classificationId String    @id
+  title            String
+  description      String
+  arrivalDate      DateTime?
+  releaseNotes     String?
+}
+
+model Product {
+  categoryId  String    @id
+  title       String
+  type        String
+  description String
+  arrivalDate DateTime?
+}
+
+model ClientStatus {
+  computerTargetId       String    @id
+  computerName           String
+  ipAddress              String
+  osDescription          String
+  osVersion              String?
+  clientVersion          String
+  computerRole           String
+  requestedTargetGroup   String?
+  assignedTargetGroups   String
+  lastSyncTime           DateTime?
+  lastReportedStatusTime DateTime?
+
+  @@index([computerName])
+}
+
+model PatchInventory {
+  updateId         String
+  revisionNumber   Int
+  title            String
+  kbArticle        String?
+  products         String?
+  classification   String
+  arrivalDate      DateTime?
+  creationDate     DateTime?
+  msrcSeverity     String
+  isApproved       Boolean
+  isDeclined       Boolean
+  isSuperseded     Boolean
+  isLatestRevision Boolean
+  updateType       String
+  description      String
+
+  @@id([updateId, revisionNumber])
+  @@index([classification])
+  @@index([msrcSeverity])
+  @@index([kbArticle])
+  @@index([isApproved, isDeclined])
+}
+
+model ClientPatchStatus {
+  id                    Int     @id @default(autoincrement())
+  computerName          String
+  computerTargetId      String
+  ipAddress             String
+  updateId              String
+  revisionNumber        Int
+  updateTitle           String
+  kbArticle             String?
+  classification        String
+  installationState     String
+  approvalAction        String
+  approvalTargetGroupId String
+
+  @@index([computerTargetId])
+  @@index([updateId])
+  @@index([installationState])
+  @@index([classification])
+  @@index([kbArticle])
+}
+
+model SynchronizationHistory {
+  synchronizationId String    @id
+  startTime         DateTime?
+  endTime           DateTime?
+  result            String
+  startedManually   Boolean
+  updateErrors      String?
+  error             String?
+  errorText         String?
+
+  @@index([startTime])
+}
+
+model SynchronizationSetting {
+  serverName               String    @id
+  synchronizeAutomatically Boolean
+  synchronizationTimeUtc   String
+  synchronizationTimeLocal String
+  syncPerDay               Int
+  intervalHours            Int
+  lastModifiedBy           String
+  lastModifiedTime         DateTime?
+}

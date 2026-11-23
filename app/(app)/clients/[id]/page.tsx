@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ClientComplianceCharts } from "@/components/client-compliance-charts";
 import { ClientPatchesTable } from "@/components/client-patches-table";
+import { splitTargetGroups } from "@/lib/wsus-compliance";
 
 export const instant = false;
 
@@ -60,7 +61,21 @@ export default async function ClientDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Badge variant="outline">{client.assignedTargetGroups}</Badge>
+            {(() => {
+              const targetGroups = splitTargetGroups(client.assignedTargetGroups);
+              if (targetGroups.length === 0) {
+                return <span className="text-sm text-muted-foreground">-</span>;
+              }
+              return (
+                <div className="flex flex-wrap gap-1.5">
+                  {targetGroups.map((group) => (
+                    <Badge key={group} variant="outline">
+                      {group}
+                    </Badge>
+                  ))}
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
         <Card>

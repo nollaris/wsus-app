@@ -26,6 +26,10 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import type { ClientPatchRow } from "@/components/client-patches-table";
+import {
+  computeDeviceCompliance,
+  getComplianceTier,
+} from "@/lib/wsus-compliance";
 
 const STATE_COLORS: Record<string, string> = {
   Installed: "hsl(142, 71%, 45%)",
@@ -43,31 +47,6 @@ const stateChartConfig = {
 const scoreChartConfig = {
   value: { label: "Updates" },
 } satisfies ChartConfig;
-
-function getComplianceTier(score: number) {
-  if (score > 95) {
-    return {
-      label: "Compliant",
-      color: "hsl(142, 71%, 45%)",
-      badgeClass: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-      textClass: "text-emerald-600 dark:text-emerald-400",
-    };
-  }
-  if (score >= 80) {
-    return {
-      label: "Needs Attention",
-      color: "hsl(38, 92%, 50%)",
-      badgeClass: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-      textClass: "text-amber-600 dark:text-amber-400",
-    };
-  }
-  return {
-    label: "Non-Compliant",
-    color: "hsl(0, 84%, 60%)",
-    badgeClass: "bg-destructive/15 text-destructive",
-    textClass: "text-destructive",
-  };
-}
 
 export function ClientComplianceCharts({
   patches,
@@ -99,12 +78,10 @@ export function ClientComplianceCharts({
     const notApplicable = counts.get("NotApplicable") ?? 0;
 
     const pending = notInstalled + downloaded;
-    const applicable = patches.length - notApplicable;
+    const { applicable, score, isFullyCompliant: computedFullyCompliant } =
+      computeDeviceCompliance({ installed, pending, failed, unknown });
     const nonCompliant = Math.max(0, applicable - installed);
-
-    // WSUS Compliance Score (%) = (Installed / Applicable) * 100
-    const score = applicable > 0 ? (installed / applicable) * 100 : 100;
-    const isFullyCompliant = applicable > 0 && pending === 0 && failed === 0 && unknown === 0;
+    const isFullyCompliant = applicable > 0 && computedFullyCompliant;
 
     const stateOrder = [
       "Installed",

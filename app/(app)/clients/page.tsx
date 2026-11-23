@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ClientsTable, type ClientRow } from "@/components/clients-table";
+import { computeDeviceCompliance } from "@/lib/wsus-compliance";
 
 export const instant = false;
 
@@ -16,28 +17,36 @@ export default async function ClientsPage() {
 
   const countsByClient = new Map<
     string,
-    { installed: number; notInstalled: number; failed: number }
+    { installed: number; pending: number; failed: number; unknown: number }
   >();
 
   for (const row of patchCounts) {
     const entry = countsByClient.get(row.computerTargetId) ?? {
       installed: 0,
-      notInstalled: 0,
+      pending: 0,
       failed: 0,
+      unknown: 0,
     };
     if (row.installationState === "Installed") entry.installed += row._count.id;
-    else if (row.installationState === "NotInstalled")
-      entry.notInstalled += row._count.id;
+    else if (
+      row.installationState === "NotInstalled" ||
+      row.installationState === "Downloaded"
+    )
+      entry.pending += row._count.id;
     else if (row.installationState === "Failed") entry.failed += row._count.id;
+    else if (row.installationState === "Unknown") entry.unknown += row._count.id;
     countsByClient.set(row.computerTargetId, entry);
   }
 
   const rows: ClientRow[] = clients.map((c) => {
     const counts = countsByClient.get(c.computerTargetId) ?? {
       installed: 0,
-      notInstalled: 0,
+      pending: 0,
       failed: 0,
+      unknown: 0,
     };
+    const { applicable, score, isFullyCompliant } =
+      computeDeviceCompliance(counts);
     return {
       serverName: c.serverName,
       computerTargetId: c.computerTargetId,
@@ -51,7 +60,12 @@ export default async function ClientsPage() {
       lastReportedStatusTime: c.lastReportedStatusTime
         ? c.lastReportedStatusTime.toISOString()
         : null,
-      ...counts,
+      installed: counts.installed,
+      notInstalled: counts.pending,
+      failed: counts.failed,
+      applicable,
+      complianceScore: score,
+      isFullyCompliant,
     };
   });
 

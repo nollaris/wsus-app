@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { TooltipProvider } from "@workspace/ui/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
+import { NavigationProgress } from "@/components/navigation-progress";
 import "./globals.css";
 
 const inter = Inter({
@@ -31,6 +33,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           enableSystem
           disableTransitionOnChange
         >
+          <Suspense fallback={null}>
+            <NavigationProgress />
+          </Suspense>
           <TooltipProvider>{children}</TooltipProvider>
         </ThemeProvider>
       </body>

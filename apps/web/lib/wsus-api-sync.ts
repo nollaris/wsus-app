@@ -11,6 +11,82 @@ export const SYNC_SCOPES = [
 ] as const;
 export type SyncScope = (typeof SYNC_SCOPES)[number];
 
+export interface SyncLimits {
+  /** Maximum number of computers to fetch from /computers (0 or undefined = unlimited) */
+  maxComputers?: number;
+  /** Maximum number of updates to fetch from /updates (0 or undefined = unlimited) */
+  maxUpdates?: number;
+  /** Maximum number of computers to query /computers/{id} for during client-patches sync */
+  maxClientDetailComputers?: number;
+  /** Page size for paginated endpoints (1..500, default 500) */
+  pageSize?: number;
+  /** Max concurrent requests to the WSUS API (1..16, default 4) */
+  concurrency?: number;
+  /** Optional delay in ms between requests per worker to throttle API load (0..5000, default 0) */
+  requestDelayMs?: number;
+  /** Per-request HTTP timeout in ms (1000..120000, default 30000) */
+  requestTimeoutMs?: number;
+  /** Only fetch approved, non-declined updates from /updates */
+  approvedUpdatesOnly?: boolean;
+  /** Skip Installed updates when syncing client-patches to reduce payload & DB writes */
+  skipInstalledClientPatches?: boolean;
+}
+
+interface ResolvedSyncLimits {
+  maxComputers: number | null;
+  maxUpdates: number | null;
+  maxClientDetailComputers: number | null;
+  pageSize: number;
+  concurrency: number;
+  requestDelayMs: number;
+  requestTimeoutMs: number;
+  approvedUpdatesOnly: boolean;
+  skipInstalledClientPatches: boolean;
+}
+
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+
+function positiveLimitOrNull(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const n = Math.trunc(value);
+  return n > 0 ? n : null;
+}
+
+function envInt(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function resolveSyncLimits(limits?: SyncLimits): ResolvedSyncLimits {
+  return {
+    maxComputers: positiveLimitOrNull(limits?.maxComputers ?? envInt("WSUS_SYNC_MAX_COMPUTERS")),
+    maxUpdates: positiveLimitOrNull(limits?.maxUpdates ?? envInt("WSUS_SYNC_MAX_UPDATES")),
+    maxClientDetailComputers: positiveLimitOrNull(
+      limits?.maxClientDetailComputers ?? envInt("WSUS_SYNC_MAX_CLIENT_DETAILS")
+    ),
+    pageSize: clampInt(limits?.pageSize ?? envInt("WSUS_SYNC_PAGE_SIZE"), 1, 500, 500),
+    concurrency: clampInt(limits?.concurrency ?? envInt("WSUS_SYNC_CONCURRENCY"), 1, 16, 4),
+    requestDelayMs: clampInt(limits?.requestDelayMs ?? envInt("WSUS_SYNC_DELAY_MS"), 0, 5000, 0),
+    requestTimeoutMs: clampInt(
+      limits?.requestTimeoutMs ?? envInt("WSUS_SYNC_TIMEOUT_MS"),
+      1000,
+      120000,
+      30000
+    ),
+    approvedUpdatesOnly: Boolean(limits?.approvedUpdatesOnly),
+    skipInstalledClientPatches: Boolean(limits?.skipInstalledClientPatches),
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+}
+
 export function isValidSyncScope(value: unknown): value is SyncScope {
   return (
     typeof value === "string" &&

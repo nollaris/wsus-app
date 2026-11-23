@@ -227,7 +227,7 @@ export function PatchesBrowser({
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="hidden xl:flex flex-wrap items-center gap-3">
             {servers.length > 0 && (
               <div className="flex items-center gap-2">
                 <Label
@@ -244,7 +244,9 @@ export function PatchesBrowser({
                   }}
                 >
                   <SelectTrigger id="patches-server-filter" className="w-[160px]">
-                    <SelectValue placeholder="WSUS Server" />
+                    <SelectValue placeholder="WSUS Server">
+                      {serverFilter === "all" ? "All Servers" : serverFilter}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Servers</SelectItem>
@@ -272,7 +274,9 @@ export function PatchesBrowser({
                 }}
               >
                 <SelectTrigger id="patches-classification-filter" className="w-[180px]">
-                  <SelectValue placeholder="Classification" />
+                  <SelectValue placeholder="Classification">
+                    {classification === "all" ? "All Classifications" : classification}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Classifications</SelectItem>
@@ -302,7 +306,9 @@ export function PatchesBrowser({
                     }}
                   >
                     <SelectTrigger id="patches-severity-filter" className="w-[150px]">
-                      <SelectValue placeholder="Severity" />
+                      <SelectValue placeholder="Severity">
+                        {severity === "all" ? "All Severities" : severity}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Severities</SelectItem>
@@ -329,7 +335,13 @@ export function PatchesBrowser({
                     }}
                   >
                     <SelectTrigger id="patches-approval-filter" className="w-[150px]">
-                      <SelectValue placeholder="Approval" />
+                      <SelectValue placeholder="Approval">
+                        {approved === "all"
+                          ? "All Approvals"
+                          : approved === "approved"
+                            ? "Approved Only"
+                            : "Declined Only"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Approvals</SelectItem>
@@ -355,7 +367,9 @@ export function PatchesBrowser({
                   }}
                 >
                   <SelectTrigger id="patches-state-filter" className="w-[180px]">
-                    <SelectValue placeholder="Install State" />
+                    <SelectValue placeholder="Install State">
+                      {stateFilter === "all" ? "All States" : stateFilter}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All States</SelectItem>
@@ -371,9 +385,9 @@ export function PatchesBrowser({
           </div>
         </div>
 
-        <TabsContent value="inventory" className="mt-4">
-          <div className="rounded-md border bg-background">
-            <Table>
+        <TabsContent value="inventory" className="mt-4 min-w-0">
+          <div className="rounded-md border bg-background min-w-0 overflow-hidden">
+            <Table className="[&_th]:px-2.5 [&_td]:px-2.5">
               <TableHeader>
                 <TableRow>
                   <SortableTableHead label="Title" sortKey="title" activeKey={invSort.key} dir={invSort.dir} onSort={handleInvSort} />
@@ -402,9 +416,11 @@ export function PatchesBrowser({
                   </TableRow>
                 ) : (
                   inventoryItems.map((p) => (
-                    <TableRow key={`${p.updateId}-${p.revisionNumber}`}>
-                      <TableCell className="max-w-md font-medium">
-                        <span className="line-clamp-2">{p.title}</span>
+                    <TableRow key={`${p.serverName}-${p.updateId}-${p.revisionNumber}`}>
+                      <TableCell className="max-w-[240px] lg:max-w-sm xl:max-w-md whitespace-normal font-medium">
+                        <span className="line-clamp-2" title={p.title}>
+                          {p.title}
+                        </span>
                       </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {p.serverName || "-"}
@@ -457,9 +473,9 @@ export function PatchesBrowser({
           </div>
         </TabsContent>
 
-        <TabsContent value="status" className="mt-4">
-          <div className="rounded-md border bg-background">
-            <Table>
+        <TabsContent value="status" className="mt-4 min-w-0">
+          <div className="rounded-md border bg-background min-w-0 overflow-hidden">
+            <Table className="[&_th]:px-2.5 [&_td]:px-2.5">
               <TableHeader>
                 <TableRow>
                   <SortableTableHead label="Computer" sortKey="computerName" activeKey={statusSort.key} dir={statusSort.dir} onSort={handleStatusSort} />
@@ -488,14 +504,18 @@ export function PatchesBrowser({
                 ) : (
                   statusItems.map((s) => (
                     <TableRow key={s.id}>
-                      <TableCell className="font-medium text-xs">
-                        {s.computerName}
+                      <TableCell className="max-w-[180px] font-medium text-xs">
+                        <span className="block truncate" title={s.computerName}>
+                          {s.computerName}
+                        </span>
                       </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {s.serverName || "-"}
                       </TableCell>
-                      <TableCell className="max-w-md text-sm">
-                        <span className="line-clamp-2">{s.updateTitle}</span>
+                      <TableCell className="max-w-[240px] lg:max-w-sm xl:max-w-md whitespace-normal text-sm">
+                        <span className="line-clamp-2" title={s.updateTitle}>
+                          {s.updateTitle}
+                        </span>
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {s.kbArticle ? `KB${s.kbArticle}` : "-"}

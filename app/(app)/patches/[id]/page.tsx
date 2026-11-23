@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Monitor } from "lucide-react";
@@ -14,6 +15,26 @@ import {
 } from "@/components/ui/table";
 
 export const instant = false;
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const updateId = decodeURIComponent(id);
+  const patch = await prisma.patchInventory.findFirst({
+    where: { updateId },
+    orderBy: [{ isLatestRevision: "desc" }, { revisionNumber: "desc" }],
+    select: { title: true, kbArticle: true },
+  });
+  if (!patch) {
+    return { title: "Patch Not Found" };
+  }
+  return {
+    title: patch.kbArticle ? `KB${patch.kbArticle} - ${patch.title}` : patch.title,
+  };
+}
 
 const SEVERITY_BADGE: Record<string, string> = {
   Critical: "bg-destructive/15 text-destructive",

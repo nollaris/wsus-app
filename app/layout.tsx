@@ -10,7 +10,10 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "WSUS Patch Management Portal",
+  title: {
+    default: "WSUS Patch Management Portal",
+    template: "%s | WSUS Portal",
+  },
   description: "Windows Server Update Services dashboard backed by PostgreSQL",
 };
 

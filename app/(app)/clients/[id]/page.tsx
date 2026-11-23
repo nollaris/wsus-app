@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -10,6 +11,21 @@ import { splitTargetGroups } from "@/lib/wsus-compliance";
 
 export const instant = false;
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const client = await prisma.clientStatus.findFirst({
+    where: { computerTargetId: id },
+    select: { computerName: true },
+  });
+  return {
+    title: client ? client.computerName : "Client Not Found",
+  };
+}
+
 export default async function ClientDetailPage({
   params,
 }: {
@@ -18,7 +34,7 @@ export default async function ClientDetailPage({
   const { id } = await params;
 
   const [client, patches] = await Promise.all([
-    prisma.clientStatus.findUnique({ where: { computerTargetId: id } }),
+    prisma.clientStatus.findFirst({ where: { computerTargetId: id } }),
     prisma.clientPatchStatus.findMany({
       where: { computerTargetId: id },
       orderBy: [{ installationState: "asc" }, { updateTitle: "asc" }],

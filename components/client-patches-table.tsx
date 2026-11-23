@@ -115,7 +115,7 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
             }}
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="hidden lg:flex items-center gap-2">
           <Label
             htmlFor="client-patches-state-filter"
             className="text-sm text-muted-foreground whitespace-nowrap"
@@ -130,7 +130,9 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
             }}
           >
             <SelectTrigger id="client-patches-state-filter" className="w-[180px]">
-              <SelectValue placeholder="Installation State" />
+              <SelectValue placeholder="Installation State">
+                {stateFilter === "all" ? "All States" : stateFilter}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All States</SelectItem>

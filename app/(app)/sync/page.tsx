@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import {
   Card,
@@ -17,6 +18,10 @@ import {
 } from "@/components/ui/table";
 
 export const instant = false;
+
+export const metadata: Metadata = {
+  title: "Sync & Catalog",
+};
 
 export default async function SyncCatalogPage() {
   const [settingsList, history, products, classifications] = await Promise.all([

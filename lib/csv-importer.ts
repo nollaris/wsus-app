@@ -32,6 +32,18 @@ function getServerName(row: Record<string, string>): string {
   return (row.ServerName ?? row.server_name ?? "").trim();
 }
 
+async function deleteExistingForServers(
+  mode: ImportMode,
+  rows: Record<string, string>[],
+  deleteFn: (where: { serverName: { in: string[] } }) => Promise<unknown>
+) {
+  if (mode !== "replace") return;
+  const serverNames = Array.from(new Set(rows.map(getServerName)));
+  if (serverNames.length > 0) {
+    await deleteFn({ serverName: { in: serverNames } });
+  }
+}
+
 async function seedInBatches<T>(
   items: T[],
   batchSize: number,
@@ -90,7 +102,9 @@ export async function importCsvBuffer(
   try {
     switch (key) {
       case "classifications.csv": {
-        if (mode === "replace") await prisma.classification.deleteMany();
+        await deleteExistingForServers(mode, rows, (where) =>
+          prisma.classification.deleteMany({ where })
+        );
         const res = await prisma.classification.createMany({
           data: rows.map((r) => ({
             serverName: getServerName(r),
@@ -112,7 +126,9 @@ export async function importCsvBuffer(
       }
 
       case "products.csv": {
-        if (mode === "replace") await prisma.product.deleteMany();
+        await deleteExistingForServers(mode, rows, (where) =>
+          prisma.product.deleteMany({ where })
+        );
         const res = await prisma.product.createMany({
           data: rows.map((r) => ({
             serverName: getServerName(r),
@@ -134,7 +150,9 @@ export async function importCsvBuffer(
       }
 
       case "client_status.csv": {
-        if (mode === "replace") await prisma.clientStatus.deleteMany();
+        await deleteExistingForServers(mode, rows, (where) =>
+          prisma.clientStatus.deleteMany({ where })
+        );
         const res = await prisma.clientStatus.createMany({
           data: rows.map((r) => ({
             serverName: getServerName(r),
@@ -162,7 +180,9 @@ export async function importCsvBuffer(
       }
 
       case "patch_inventory.csv": {
-        if (mode === "replace") await prisma.patchInventory.deleteMany();
+        await deleteExistingForServers(mode, rows, (where) =>
+          prisma.patchInventory.deleteMany({ where })
+        );
         const count = await seedInBatches(rows, 1000, (batch) =>
           prisma.patchInventory.createMany({
             data: batch.map((r) => ({
@@ -196,7 +216,9 @@ export async function importCsvBuffer(
       }
 
       case "client_patch_status.csv": {
-        if (mode === "replace") await prisma.clientPatchStatus.deleteMany();
+        await deleteExistingForServers(mode, rows, (where) =>
+          prisma.clientPatchStatus.deleteMany({ where })
+        );
         const count = await seedInBatches(rows, 1000, (batch) =>
           prisma.clientPatchStatus.createMany({
             data: batch.map((r) => ({
@@ -225,7 +247,9 @@ export async function importCsvBuffer(
       }
 
       case "synchronization_history.csv": {
-        if (mode === "replace") await prisma.synchronizationHistory.deleteMany();
+        await deleteExistingForServers(mode, rows, (where) =>
+          prisma.synchronizationHistory.deleteMany({ where })
+        );
         const res = await prisma.synchronizationHistory.createMany({
           data: rows.map((r) => ({
             serverName: getServerName(r),
@@ -250,7 +274,9 @@ export async function importCsvBuffer(
       }
 
       case "synchronization_settings.csv": {
-        if (mode === "replace") await prisma.synchronizationSetting.deleteMany();
+        await deleteExistingForServers(mode, rows, (where) =>
+          prisma.synchronizationSetting.deleteMany({ where })
+        );
         const res = await prisma.synchronizationSetting.createMany({
           data: rows.map((r) => ({
             serverName: getServerName(r),

@@ -1,7 +1,12 @@
+import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { PatchesBrowser } from "@/components/patches-browser";
 
 export const instant = false;
+
+export const metadata: Metadata = {
+  title: "Patches",
+};
 
 export default async function PatchesPage() {
   const [classifications, severities, states, servers] = await Promise.all([

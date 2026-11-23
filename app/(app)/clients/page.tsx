@@ -1,8 +1,13 @@
+import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { ClientsTable, type ClientRow } from "@/components/clients-table";
 import { computeDeviceCompliance } from "@/lib/wsus-compliance";
 
 export const instant = false;
+
+export const metadata: Metadata = {
+  title: "Client Status",
+};
 
 export default async function ClientsPage() {
   const [clients, patchCounts] = await Promise.all([

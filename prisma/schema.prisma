@@ -17,29 +17,31 @@ model User {
 
 model Classification {
   serverName       String    @default("")
-  classificationId String    @id
+  classificationId String
   title            String
   description      String
   arrivalDate      DateTime?
   releaseNotes     String?
 
+  @@id([serverName, classificationId])
   @@index([serverName])
 }
 
 model Product {
   serverName  String    @default("")
-  categoryId  String    @id
+  categoryId  String
   title       String
   type        String
   description String
   arrivalDate DateTime?
 
+  @@id([serverName, categoryId])
   @@index([serverName])
 }
 
 model ClientStatus {
   serverName             String    @default("")
-  computerTargetId       String    @id
+  computerTargetId       String
   computerName           String
   ipAddress              String
   osDescription          String
@@ -51,7 +53,9 @@ model ClientStatus {
   lastSyncTime           DateTime?
   lastReportedStatusTime DateTime?
 
+  @@id([serverName, computerTargetId])
   @@index([serverName])
+  @@index([computerTargetId])
   @@index([computerName])
 }
 
@@ -73,8 +77,9 @@ model PatchInventory {
   updateType       String
   description      String
 
-  @@id([updateId, revisionNumber])
+  @@id([serverName, updateId, revisionNumber])
   @@index([serverName])
+  @@index([updateId])
   @@index([classification])
   @@index([msrcSeverity])
   @@index([kbArticle])
@@ -106,7 +111,7 @@ model ClientPatchStatus {
 
 model SynchronizationHistory {
   serverName        String    @default("")
-  synchronizationId String    @id
+  synchronizationId String
   startTime         DateTime?
   endTime           DateTime?
   result            String
@@ -115,6 +120,7 @@ model SynchronizationHistory {
   error             String?
   errorText         String?
 
+  @@id([serverName, synchronizationId])
   @@index([serverName])
   @@index([startTime])
 }

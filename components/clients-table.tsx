@@ -208,17 +208,19 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground">
               Total Compliance Score
             </CardTitle>
-            <Badge variant="secondary" className={summary.tier.badgeClass}>
-              {summary.tier.label}
-            </Badge>
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold tabular-nums ${summary.tier.textClass}`}>
-              {summary.fleetScore.toFixed(1)}%
+            <div className="flex items-center gap-2">
+              <span className={`text-2xl font-bold tabular-nums ${summary.tier.textClass}`}>
+                {summary.fleetScore.toFixed(1)}%
+              </span>
+              <Badge variant="secondary" className={summary.tier.badgeClass}>
+                {summary.tier.label}
+              </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {summary.fullyCompliant} of {summary.total} computers fully compliant
@@ -284,7 +286,7 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
             }}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="hidden xl:flex flex-wrap items-center gap-2">
           {servers.length > 0 && (
             <>
               <Label
@@ -301,7 +303,9 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                 }}
               >
                 <SelectTrigger id="clients-server-filter" className="w-[170px]">
-                  <SelectValue placeholder="WSUS Server" />
+                  <SelectValue placeholder="WSUS Server">
+                    {serverFilter === "all" ? "All Servers" : serverFilter}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Servers</SelectItem>
@@ -327,8 +331,10 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
               setPage(1);
             }}
           >
-            <SelectTrigger id="clients-target-group-filter" className="w-[220px]">
-              <SelectValue placeholder="Target Group" />
+            <SelectTrigger id="clients-target-group-filter" className="w-[200px]">
+              <SelectValue placeholder="Target Group">
+                {groupFilter === "all" ? "All Target Groups" : groupFilter}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Target Groups</SelectItem>
@@ -345,8 +351,8 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
         </div>
       </div>
 
-      <div className="rounded-md border bg-background">
-        <Table>
+      <div className="rounded-md border bg-background min-w-0 overflow-hidden">
+        <Table className="[&_th]:px-2 [&_td]:px-2 text-xs">
           <TableHeader>
             <TableRow>
               <SortableTableHead label="Computer Name" sortKey="computerName" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
@@ -373,20 +379,27 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                 const tier = getComplianceTier(c.complianceScore);
                 return (
                 <TableRow key={c.computerTargetId}>
-                  <TableCell className="font-medium">
+                  <TableCell className="max-w-[160px] xl:max-w-[210px] font-medium">
                     <Link
                       href={`/clients/${c.computerTargetId}`}
-                      className="inline-flex items-center gap-2 text-primary hover:underline"
+                      title={c.computerName}
+                      className="flex items-center gap-1.5 text-primary hover:underline"
                     >
-                      <Monitor className="h-3.5 w-3.5 text-muted-foreground" />
-                      {c.computerName}
+                      <Monitor className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{c.computerName}</span>
                     </Link>
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {c.serverName || "-"}
+                  <TableCell className="max-w-[105px] font-mono text-xs text-muted-foreground">
+                    <span className="block truncate" title={c.serverName || "-"}>
+                      {c.serverName || "-"}
+                    </span>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{c.ipAddress}</TableCell>
-                  <TableCell className="text-xs">{c.osDescription}</TableCell>
+                  <TableCell className="max-w-[110px] text-xs">
+                    <span className="block truncate" title={c.osDescription}>
+                      {c.osDescription}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     {(() => {
                       const targetGroups = splitTargetGroups(c.assignedTargetGroups);
@@ -408,9 +421,12 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                       );
                     })()}
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
+                  <TableCell
+                    className="font-mono text-xs text-muted-foreground"
+                    title={c.lastSyncTime ?? undefined}
+                  >
                     {c.lastSyncTime
-                      ? c.lastSyncTime.replace("T", " ").slice(0, 19)
+                      ? c.lastSyncTime.replace("T", " ").slice(5, 16)
                       : "-"}
                   </TableCell>
                   <TableCell className="text-right">

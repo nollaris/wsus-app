@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Monitor,
@@ -27,6 +28,10 @@ import {
 import { DashboardCharts } from "@/components/dashboard-charts";
 
 export const instant = false;
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+};
 
 export default async function DashboardPage() {
   const [

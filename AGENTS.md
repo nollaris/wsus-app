@@ -8,13 +8,11 @@
 ## Tech Stack
 - **Monorepo**: `pnpm` + Turborepo (`pnpm-workspace.yaml`, `turbo.json`)
 - **Web (`apps/web`)**: Next.js 16 (`cacheComponents: true`, `partialPrefetching: true`), React 19, Prisma 7 (`@prisma/adapter-pg`), `jose` (HS256 JWT), `bcryptjs`
-- **Gateway (`apps/gateway`)**: Hono + `@hono/node-server`
 - **UI (`packages/ui`, `@workspace/ui`)**: `@base-ui/react` + Tailwind CSS v4 + `lucide-react` + `recharts`
 - **WSUS Agent (`wsus/WsusRestApi`)**: C# / `.NET Framework 4.8` IIS sub-application
 
 ## Repo Structure
 - `apps/web/` — Next.js App Router portal, API Route Handlers, Prisma schema/seed (`generated/prisma` output), and core libs
-- `apps/gateway/` — Optional Hono HTTP proxy forwarding read-only WSUS API calls when `WSUS_GATEWAY_URL` is set
 - `packages/ui/` — Shared `@workspace/ui` primitives (`components/ui/*`, `lib/*`, `hooks/*`)
 - `wsus/` — Read-only C# IIS REST API (`WsusRestApi/`) and Windows Server deployment scripts
 
@@ -30,16 +28,15 @@ Do not run or modify the following without explicit user approval:
 > Windows PowerShell 5.1 does not support `&&`; wrap chained commands in `cmd /c "..."` or run separately.
 
 - `pnpm install` — Install workspace dependencies
-- Env setup: create `apps/web/.env` (`DATABASE_URL`, `AUTH_SECRET`; `TODO: Confirm` — no `apps/web/.env.example` exists) and `apps/gateway/.env` from `apps/gateway/.env.example`
-- `pnpm dev:web` / `pnpm dev:gateway` — Run dev servers (`package.json`)
+- Env setup: create `apps/web/.env` (`DATABASE_URL`, `AUTH_SECRET`; `TODO: Confirm` — no `apps/web/.env.example` exists)
+- `pnpm dev:web` — Run web dev server (`package.json`)
 - `pnpm --filter @wsus-app/web typecheck` / `pnpm --filter @wsus-app/web build` — Typecheck and production build
 - `pnpm --filter @wsus-app/web exec eslint <file...>` — Lint specific modified files
-- `pnpm --filter @wsus-app/gateway typecheck` / `pnpm --filter @wsus-app/gateway build` — Typecheck and build gateway
 - `pnpm --filter @wsus-app/web exec prisma generate` — Generate Prisma client to `apps/web/generated/prisma`
 - `pnpm --filter @wsus-app/web exec prisma db push` / `prisma db seed` — Push schema or seed default admin (`TODO: Confirm` production seed policy)
 
 ## WSUS REST API (`wsus/WsusRestApi`, C#)
-- **Strict Read-Only Rule**: Never add endpoints that write, approve, decline, or delete updates/computers on WSUS. `apps/gateway` only proxies `GET`/`HEAD`/`OPTIONS` (`apps/gateway/src/index.ts`, `routes/wsus.ts`).
+- **Strict Read-Only Rule**: Never add endpoints that write, approve, decline, or delete updates/computers on WSUS.
 - **Build & Deploy**: No `.csproj`/`.sln` exists; `wsus/install-on-wsus.ps1` compiles directly on the WSUS host using `.NET Framework 4.8` `csc.exe` + `Microsoft.UpdateServices.Administration.dll` and deploys to IIS (`C:\inetpub\wsus-api`, Site `WSUS Administration`, AppPool `WsusRestApiPool`, port `8530`, path `/wsus-api`).
 - **API & Verification**: Base path `/wsus-api/api/v1` (`X-Api-Key` header from `Config/security.json`). Verify via `GET /wsus-api/api/v1/health` or `POST /api/wsus-servers/[id]/test`.
 - **Deployment Rule**: `TODO: Confirm` — clarify preferred deployment restriction (repo provides `wsus/Install-WsusRestApi.bat` one-click wrapper around `install-on-wsus.ps1`).
@@ -52,7 +49,7 @@ Do not run or modify the following without explicit user approval:
 - **Route Handler Validation & Errors**: Manually parse `await request.json()`, validate fields (`typeof`/regex/`new URL`), and return `NextResponse.json({ error: "..." }, { status })` (`400`/`401`/`403`/`404`/`409`/`500`).
 
 ## Architecture Rules
-- **WSUS Sync Flow**: When `WSUS_GATEWAY_URL` is set (`apps/web/lib/wsus-api-sync.ts`), requests route through `@wsus-app/gateway` with `x-wsus-base-url` and `x-wsus-api-key` headers.
+- **WSUS Sync Flow**: `apps/web/lib/wsus-api-sync.ts` makes direct `GET` requests to each configured WSUS server's `baseUrl` with `Accept: application/json` and `X-Api-Key` headers.
 - **RBAC (`apps/web/lib/rbac.ts`)**: Three roles — `admin` (users, servers, DB reset, sync), `operator` (read + test/trigger sync), `viewer` (read-only) — enforced in `apps/web/proxy.ts` and Route Handlers.
 - **Patch Deduplication (`apps/web/lib/patch-dedupe.ts`)**: `PatchInventory` writes must pass through `dedupePatchInventory()` (deduped by `updateId` and `title`); build `updateApprovalMap` from the full list before deduplicating.
 - **Lazy Cache Refresh**: `LazyDataRefresh` (`apps/web/components/lazy-data-refresh.tsx`) polls `/api/data-version` only when the tab is visible and triggers `revalidatePath("/", "layout")` when data changes.
@@ -68,7 +65,7 @@ Do not run or modify the following without explicit user approval:
 - Verification currently relies on `typecheck`, targeted `eslint`, `next build`, and manual UI/API checks (`POST /api/wsus-servers/[id]/test`, `/login`, `/users`, `/sync/[id]`).
 
 ## Definition of Done
-1. `pnpm --filter @wsus-app/web typecheck` passes (and `@wsus-app/gateway typecheck` if gateway files changed).
+1. `pnpm --filter @wsus-app/web typecheck` passes.
 2. `pnpm --filter @wsus-app/web exec eslint` passes on all created or modified files.
 3. `pnpm --filter @wsus-app/web build` succeeds without errors.
 4. If `apps/web/prisma/schema.prisma` changed, run `prisma generate` (with approval) and check impact on `apps/web/lib/data-version.ts`.

@@ -8,8 +8,7 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "dev:web": "turbo run dev --filter=@wsus-app/web",
-    "dev:gateway": "turbo run dev --filter=@wsus-app/gateway"
+    "dev:web": "turbo run dev --filter=@wsus-app/web"
   },
   "devDependencies": {
     "turbo": "^2.5.0"

@@ -209,18 +209,11 @@ async function fetchFromWsus<T>(
   timeoutMs = 30000,
   signal?: AbortSignal
 ): Promise<WsusApiEnvelope<T>> {
-  const gatewayUrl = process.env.WSUS_GATEWAY_URL?.trim().replace(/\/+$/, "");
-  const cleanBase = normalizeBaseUrl(server.baseUrl);
-
-  const url = gatewayUrl ? `${gatewayUrl}${path}` : `${cleanBase}${path}`;
+  const url = `${normalizeBaseUrl(server.baseUrl)}${path}`;
   const headers: Record<string, string> = {
     Accept: "application/json",
     "X-Api-Key": server.apiKey,
   };
-  if (gatewayUrl) {
-    headers["x-wsus-base-url"] = cleanBase;
-    headers["x-wsus-api-key"] = server.apiKey;
-  }
 
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const combinedSignal = signal

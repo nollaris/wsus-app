@@ -25,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/ui/table";
-import { DashboardCharts } from "@/components/dashboard-charts";
+import { DashboardCharts } from "./_components/dashboard-charts";
 
 export const instant = false;
 

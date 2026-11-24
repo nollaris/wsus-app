@@ -25,11 +25,11 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@workspace/ui/components/ui/chart";
-import type { ClientPatchRow } from "@/components/client-patches-table";
+import type { ClientPatchRow } from "./client-patches-table";
 import {
   computeDeviceCompliance,
   getComplianceTier,
-} from "@/lib/wsus-compliance";
+} from "../../_lib/wsus-compliance";
 
 const STATE_COLORS: Record<string, string> = {
   Installed: "hsl(142, 71%, 45%)",

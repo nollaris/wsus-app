@@ -4,7 +4,7 @@ import {
   KpiCardsSkeleton,
   PageHeaderSkeleton,
   TableCardSkeleton,
-} from "@/components/page-skeletons";
+} from "../../_components/page-skeletons";
 
 export default function PatchDetailLoading() {
   return (

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
-import { ClientsTable, type ClientRow } from "@/components/clients-table";
-import { computeDeviceCompliance, resolveClientOsVersion, type OsPatchHint } from "@/lib/wsus-compliance";
+import { ClientsTable, type ClientRow } from "./_components/clients-table";
+import { computeDeviceCompliance, resolveClientOsVersion, type OsPatchHint } from "./_lib/wsus-compliance";
 
 export const instant = false;
 

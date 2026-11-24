@@ -5,9 +5,9 @@ import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@workspace/ui/components/ui/card";
 import { Badge } from "@workspace/ui/components/ui/badge";
-import { ClientComplianceCharts } from "@/components/client-compliance-charts";
-import { ClientPatchesTable } from "@/components/client-patches-table";
-import { resolveClientOsVersion, splitTargetGroups } from "@/lib/wsus-compliance";
+import { ClientComplianceCharts } from "./_components/client-compliance-charts";
+import { ClientPatchesTable } from "./_components/client-patches-table";
+import { resolveClientOsVersion, splitTargetGroups } from "../_lib/wsus-compliance";
 
 export const instant = false;
 

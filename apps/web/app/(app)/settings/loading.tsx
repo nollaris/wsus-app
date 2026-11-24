@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader } from "@workspace/ui/components/ui/card";
 import { Skeleton } from "@workspace/ui/components/ui/skeleton";
-import { PageHeaderSkeleton } from "@/components/page-skeletons";
+import { PageHeaderSkeleton } from "../_components/page-skeletons";
 
 export default function SettingsLoading() {
   return (

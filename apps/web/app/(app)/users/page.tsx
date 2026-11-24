@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { canManageUsers } from "@/lib/rbac";
-import { UsersManager } from "@/components/users-manager";
+import { UsersManager } from "./_components/users-manager";
 
 export const instant = false;
 

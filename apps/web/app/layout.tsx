@@ -2,8 +2,8 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { TooltipProvider } from "@workspace/ui/components/ui/tooltip";
-import { ThemeProvider } from "@/components/theme-provider";
-import { NavigationProgress } from "@/components/navigation-progress";
+import { ThemeProvider } from "./_components/theme-provider";
+import { NavigationProgress } from "./_components/navigation-progress";
 import "./globals.css";
 
 const inter = Inter({

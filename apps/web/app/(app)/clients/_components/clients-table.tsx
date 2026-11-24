@@ -13,7 +13,7 @@ import { Input } from "@workspace/ui/components/ui/input";
 import { Label } from "@workspace/ui/components/ui/label";
 import { Badge } from "@workspace/ui/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@workspace/ui/components/ui/card";
-import { getComplianceTier, splitTargetGroups } from "@/lib/wsus-compliance";
+import { getComplianceTier, splitTargetGroups } from "../_lib/wsus-compliance";
 import {
   Select,
   SelectContent,

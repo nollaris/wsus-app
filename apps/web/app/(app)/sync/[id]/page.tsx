@@ -4,8 +4,8 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Clock, XCircle } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { SyncHistoryTable } from "@/components/sync-history-table";
-import { WsusServerControl } from "@/components/wsus-server-control";
+import { SyncHistoryTable } from "./_components/sync-history-table";
+import { WsusServerControl } from "./_components/wsus-server-control";
 import { Badge } from "@workspace/ui/components/ui/badge";
 import { Button } from "@workspace/ui/components/ui/button";
 import {

@@ -13,7 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import { canManageUsers } from "@/lib/rbac";
-import { NavUser } from "@/components/nav-user";
+import { NavUser } from "./nav-user";
 import {
   Sidebar,
   SidebarContent,

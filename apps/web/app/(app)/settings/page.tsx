@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { SettingsPanel } from "@/components/settings-panel";
+import { SettingsPanel } from "./_components/settings-panel";
 
 export const instant = false;
 

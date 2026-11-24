@@ -1,9 +1,9 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { AppSidebar } from "@/components/app-sidebar";
-import { LazyDataRefresh } from "@/components/lazy-data-refresh";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AppSidebar } from "./app-sidebar";
+import { LazyDataRefresh } from "./lazy-data-refresh";
+import { ThemeToggle } from "./theme-toggle";
 import {
   Breadcrumb,
   BreadcrumbItem,

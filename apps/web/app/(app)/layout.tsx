@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { AppShell } from "@/components/app-shell";
+import { AppShell } from "./_components/app-shell";
 
 export const instant = false;
 

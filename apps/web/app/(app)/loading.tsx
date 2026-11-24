@@ -2,7 +2,7 @@ import {
   KpiCardsSkeleton,
   PageHeaderSkeleton,
   TableSkeleton,
-} from "@/components/page-skeletons";
+} from "./_components/page-skeletons";
 
 export default function AppLoading() {
   return (

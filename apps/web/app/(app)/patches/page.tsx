@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
-import { PatchesBrowser } from "@/components/patches-browser";
+import { PatchesBrowser } from "./_components/patches-browser";
 
 export const instant = false;
 

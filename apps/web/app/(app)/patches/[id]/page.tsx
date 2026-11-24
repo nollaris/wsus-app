@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { formatKbArticle } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@workspace/ui/components/ui/card";
 import { Badge } from "@workspace/ui/components/ui/badge";
-import { PatchClientsTable } from "@/components/patch-clients-table";
+import { PatchClientsTable } from "./_components/patch-clients-table";
 import {
   Table,
   TableBody,

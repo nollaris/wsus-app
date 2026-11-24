@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { WsusServersManager } from "@/components/wsus-servers-manager";
+import { WsusServersManager } from "./_components/wsus-servers-manager";
 import {
   Card,
   CardContent,

@@ -83,8 +83,22 @@ export function resolveSyncLimits(limits?: SyncLimits): ResolvedSyncLimits {
   };
 }
 
-function sleep(ms: number): Promise<void> {
-  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException("Sync cancelled by user", "AbortError"));
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      reject(new DOMException("Sync cancelled by user", "AbortError"));
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export function isValidSyncScope(value: unknown): value is SyncScope {
@@ -95,10 +109,12 @@ export function isValidSyncScope(value: unknown): value is SyncScope {
 }
 
 const globalForSync = globalThis as unknown as {
-  activeWsusSyncs?: Set<number>;
+  activeWsusSyncs?: Map<number, AbortController>;
 };
 const activeWsusSyncs =
-  globalForSync.activeWsusSyncs ?? (globalForSync.activeWsusSyncs = new Set<number>());
+  globalForSync.activeWsusSyncs instanceof Map
+    ? globalForSync.activeWsusSyncs
+    : (globalForSync.activeWsusSyncs = new Map<number, AbortController>());
 
 interface WsusApiEnvelope<T> {
   success: boolean;
@@ -190,7 +206,8 @@ function normalizeBaseUrl(baseUrl: string): string {
 async function fetchFromWsus<T>(
   server: { baseUrl: string; apiKey: string },
   path: string,
-  timeoutMs = 30000
+  timeoutMs = 30000,
+  signal?: AbortSignal
 ): Promise<WsusApiEnvelope<T>> {
   const gatewayUrl = process.env.WSUS_GATEWAY_URL?.trim().replace(/\/+$/, "");
   const cleanBase = normalizeBaseUrl(server.baseUrl);
@@ -205,11 +222,16 @@ async function fetchFromWsus<T>(
     headers["x-wsus-api-key"] = server.apiKey;
   }
 
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const combinedSignal = signal
+    ? AbortSignal.any([timeoutSignal, signal])
+    : timeoutSignal;
+
   const res = await fetch(url, {
     method: "GET",
     headers,
     cache: "no-store",
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: combinedSignal,
   });
 
   const json = (await res.json().catch(() => null)) as WsusApiEnvelope<T> | null;
@@ -238,7 +260,8 @@ async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
   worker: (item: T, index: number) => Promise<R>,
-  delayMs = 0
+  delayMs = 0,
+  signal?: AbortSignal
 ): Promise<R[]> {
   if (items.length === 0) return [];
   const results = new Array<R>(items.length);
@@ -246,11 +269,14 @@ async function mapWithConcurrency<T, R>(
 
   async function runWorker() {
     while (true) {
+      if (signal?.aborted) {
+        throw new DOMException("Sync cancelled by user", "AbortError");
+      }
       const idx = nextIndex++;
       if (idx >= items.length) break;
       results[idx] = await worker(items[idx]!, idx);
       if (delayMs > 0 && nextIndex < items.length) {
-        await sleep(delayMs);
+        await sleep(delayMs, signal);
       }
     }
   }
@@ -269,6 +295,7 @@ async function fetchAllPages<T>(
     concurrency: number;
     delayMs: number;
     timeoutMs: number;
+    signal?: AbortSignal;
   }
 ): Promise<T[]> {
   const effectivePageSize =
@@ -279,7 +306,8 @@ async function fetchAllPages<T>(
   const firstRes = await fetchFromWsus<T[]>(
     server,
     `${resourcePath}${sep}page=1&pageSize=${effectivePageSize}`,
-    options.timeoutMs
+    options.timeoutMs,
+    options.signal
   );
 
   const items: T[] = [...firstRes.data];
@@ -309,11 +337,13 @@ async function fetchAllPages<T>(
       const res = await fetchFromWsus<T[]>(
         server,
         `${resourcePath}${sep}page=${page}&pageSize=${effectivePageSize}`,
-        options.timeoutMs
+        options.timeoutMs,
+        options.signal
       );
       return res.data;
     },
-    options.delayMs
+    options.delayMs,
+    options.signal
   );
 
   for (const pageItems of pageResults) {
@@ -331,6 +361,7 @@ async function fetchComputerDetailsInBatches(
     delayMs: number;
     timeoutMs: number;
     includeInstalled: boolean;
+    signal?: AbortSignal;
   }
 ): Promise<RemoteComputerDetail[]> {
   const targetComputers =
@@ -343,18 +374,26 @@ async function fetchComputerDetailsInBatches(
     targetComputers,
     options.concurrency,
     async (c) => {
+      if (options.signal?.aborted) {
+        throw new DOMException("Sync cancelled by user", "AbortError");
+      }
       try {
         const res = await fetchFromWsus<RemoteComputerDetail>(
           server,
           `/computers/${encodeURIComponent(c.computerId)}${query}`,
-          options.timeoutMs
+          options.timeoutMs,
+          options.signal
         );
         return res.data;
-      } catch {
+      } catch (err) {
+        if (options.signal?.aborted || (err instanceof Error && err.name === "AbortError")) {
+          throw err;
+        }
         return null;
       }
     },
-    options.delayMs
+    options.delayMs,
+    options.signal
   );
 
   return results.filter((item): item is RemoteComputerDetail => item !== null);
@@ -363,7 +402,8 @@ async function fetchComputerDetailsInBatches(
 export async function syncWsusServerById(
   serverId: number,
   scope: SyncScope = "all",
-  rawLimits?: SyncLimits
+  rawLimits?: SyncLimits,
+  signal?: AbortSignal
 ) {
   const limits = resolveSyncLimits(rawLimits);
   const server = await prisma.wsusServer.findUnique({ where: { id: serverId } });
@@ -390,6 +430,7 @@ export async function syncWsusServerById(
             concurrency: limits.concurrency,
             delayMs: limits.requestDelayMs,
             timeoutMs: limits.requestTimeoutMs,
+            signal,
           })
         : Promise.resolve([] as RemoteComputer[]),
       syncUpdates
@@ -399,16 +440,22 @@ export async function syncWsusServerById(
             concurrency: limits.concurrency,
             delayMs: limits.requestDelayMs,
             timeoutMs: limits.requestTimeoutMs,
+            signal,
           })
         : Promise.resolve([] as RemoteUpdate[]),
       syncOverview
         ? fetchFromWsus<RemoteSyncOverview>(
             server,
             "/sync?limit=50",
-            limits.requestTimeoutMs
+            limits.requestTimeoutMs,
+            signal
           )
         : Promise.resolve(null),
     ]);
+
+    if (signal?.aborted) {
+      throw new DOMException("Sync cancelled by user", "AbortError");
+    }
 
     const computerDetails = syncClientPatches
       ? await fetchComputerDetailsInBatches(server, computers, {
@@ -417,8 +464,13 @@ export async function syncWsusServerById(
           delayMs: limits.requestDelayMs,
           timeoutMs: limits.requestTimeoutMs,
           includeInstalled: !limits.skipInstalledClientPatches,
+          signal,
         })
       : [];
+
+    if (signal?.aborted) {
+      throw new DOMException("Sync cancelled by user", "AbortError");
+    }
 
     const updateApprovalMap = new Map<string, string>();
     if (syncClientPatches) {
@@ -497,35 +549,8 @@ export async function syncWsusServerById(
       }
     }
 
-    await prisma.$transaction(async (tx) => {
-      // 1. Replace ClientStatus for this server
-      if (syncComputers) {
-        await tx.clientStatus.deleteMany({ where: { serverName } });
-        if (computers.length > 0) {
-          await tx.clientStatus.createMany({
-            data: computers.map((c) => ({
-              serverName,
-              computerTargetId: c.computerId,
-              computerName: c.fullDomainName,
-              ipAddress: c.ipAddress ?? "",
-              osDescription: c.osDescription ?? "Unknown",
-              osVersion: c.osVersion ?? null,
-              clientVersion: c.clientVersion ?? "",
-              computerRole: c.computerRole ?? "Workstation",
-              requestedTargetGroup: c.requestedTargetGroup ?? null,
-              assignedTargetGroups: (c.assignedTargetGroups ?? []).join(", "),
-              lastSyncTime: c.lastSyncTimeUtc ? new Date(c.lastSyncTimeUtc) : null,
-              lastReportedStatusTime: c.lastReportedStatusTimeUtc
-                ? new Date(c.lastReportedStatusTimeUtc)
-                : null,
-            })),
-          });
-        }
-      }
-
-      // 2. Replace PatchInventory for this server (deduplicated by updateId & title)
-      if (syncUpdates) {
-        const dedupedUpdates = dedupePatchInventory(
+    const dedupedUpdates = syncUpdates
+      ? dedupePatchInventory(
           updates.map((u) => ({
             serverName,
             updateId: u.updateId,
@@ -544,71 +569,103 @@ export async function syncWsusServerById(
             updateType: u.updateType ?? "Software",
             description: "",
           }))
-        );
+        )
+      : [];
 
-        await tx.patchInventory.deleteMany({ where: { serverName } });
-        if (dedupedUpdates.length > 0) {
-          await tx.patchInventory.createMany({
-            data: dedupedUpdates,
-            skipDuplicates: true,
-          });
-        }
+    const productDates = new Map<string, { title: string; arrivalDate: Date | null }>();
+    const classificationDates = new Map<string, { title: string; arrivalDate: Date | null }>();
 
-        // Derive subscribed Products & Classifications from synced updates
-        const productDates = new Map<string, { title: string; arrivalDate: Date | null }>();
-        const classificationDates = new Map<string, { title: string; arrivalDate: Date | null }>();
+    if (syncUpdates) {
+      for (const u of updates) {
+        const arrivalDate = u.arrivalDateUtc ? new Date(u.arrivalDateUtc) : null;
 
-        for (const u of updates) {
-          const arrivalDate = u.arrivalDateUtc ? new Date(u.arrivalDateUtc) : null;
-
-          for (const rawProduct of u.products ?? []) {
-            const title = rawProduct.trim();
-            if (!title) continue;
-            const key = title.toLowerCase();
-            const existing = productDates.get(key);
-            if (!existing || (arrivalDate && (!existing.arrivalDate || arrivalDate > existing.arrivalDate))) {
-              productDates.set(key, { title, arrivalDate });
-            }
-          }
-
-          const classTitle = (u.classification ?? "").trim() || "Other";
-          const classKey = classTitle.toLowerCase();
-          const existingClass = classificationDates.get(classKey);
-          if (!existingClass || (arrivalDate && (!existingClass.arrivalDate || arrivalDate > existingClass.arrivalDate))) {
-            classificationDates.set(classKey, { title: classTitle, arrivalDate });
+        for (const rawProduct of u.products ?? []) {
+          const title = rawProduct.trim();
+          if (!title) continue;
+          const key = title.toLowerCase();
+          const existing = productDates.get(key);
+          if (!existing || (arrivalDate && (!existing.arrivalDate || arrivalDate > existing.arrivalDate))) {
+            productDates.set(key, { title, arrivalDate });
           }
         }
 
-        await tx.product.deleteMany({ where: { serverName } });
-        if (productDates.size > 0) {
-          await tx.product.createMany({
-            data: Array.from(productDates.entries()).map(([categoryId, info]) => ({
-              serverName,
-              categoryId,
-              title: info.title,
-              type: "Product",
-              description: "",
-              arrivalDate: info.arrivalDate,
-            })),
-            skipDuplicates: true,
-          });
-        }
-
-        await tx.classification.deleteMany({ where: { serverName } });
-        if (classificationDates.size > 0) {
-          await tx.classification.createMany({
-            data: Array.from(classificationDates.entries()).map(([classificationId, info]) => ({
-              serverName,
-              classificationId,
-              title: info.title,
-              description: "",
-              arrivalDate: info.arrivalDate,
-              releaseNotes: null,
-            })),
-            skipDuplicates: true,
-          });
+        const classTitle = (u.classification ?? "").trim() || "Other";
+        const classKey = classTitle.toLowerCase();
+        const existingClass = classificationDates.get(classKey);
+        if (!existingClass || (arrivalDate && (!existingClass.arrivalDate || arrivalDate > existingClass.arrivalDate))) {
+          classificationDates.set(classKey, { title: classTitle, arrivalDate });
         }
       }
+    }
+
+    await prisma.$transaction(
+      async (tx) => {
+        // 1. Replace ClientStatus for this server
+        if (syncComputers) {
+          await tx.clientStatus.deleteMany({ where: { serverName } });
+          if (computers.length > 0) {
+            await tx.clientStatus.createMany({
+              data: computers.map((c) => ({
+                serverName,
+                computerTargetId: c.computerId,
+                computerName: c.fullDomainName,
+                ipAddress: c.ipAddress ?? "",
+                osDescription: c.osDescription ?? "Unknown",
+                osVersion: c.osVersion ?? null,
+                clientVersion: c.clientVersion ?? "",
+                computerRole: c.computerRole ?? "Workstation",
+                requestedTargetGroup: c.requestedTargetGroup ?? null,
+                assignedTargetGroups: (c.assignedTargetGroups ?? []).join(", "),
+                lastSyncTime: c.lastSyncTimeUtc ? new Date(c.lastSyncTimeUtc) : null,
+                lastReportedStatusTime: c.lastReportedStatusTimeUtc
+                  ? new Date(c.lastReportedStatusTimeUtc)
+                  : null,
+              })),
+            });
+          }
+        }
+
+        // 2. Replace PatchInventory for this server (deduplicated by updateId & title)
+        if (syncUpdates) {
+          await tx.patchInventory.deleteMany({ where: { serverName } });
+          const patchChunkSize = 2500;
+          for (let i = 0; i < dedupedUpdates.length; i += patchChunkSize) {
+            await tx.patchInventory.createMany({
+              data: dedupedUpdates.slice(i, i + patchChunkSize),
+              skipDuplicates: true,
+            });
+          }
+
+          await tx.product.deleteMany({ where: { serverName } });
+          if (productDates.size > 0) {
+            await tx.product.createMany({
+              data: Array.from(productDates.entries()).map(([categoryId, info]) => ({
+                serverName,
+                categoryId,
+                title: info.title,
+                type: "Product",
+                description: "",
+                arrivalDate: info.arrivalDate,
+              })),
+              skipDuplicates: true,
+            });
+          }
+
+          await tx.classification.deleteMany({ where: { serverName } });
+          if (classificationDates.size > 0) {
+            await tx.classification.createMany({
+              data: Array.from(classificationDates.entries()).map(([classificationId, info]) => ({
+                serverName,
+                classificationId,
+                title: info.title,
+                description: "",
+                arrivalDate: info.arrivalDate,
+                releaseNotes: null,
+              })),
+              skipDuplicates: true,
+            });
+          }
+        }
 
       // 3. Upsert SynchronizationSetting
       if (syncOverview && syncRes) {
@@ -674,7 +731,9 @@ export async function syncWsusServerById(
           });
         }
       }
-    });
+      },
+      { maxWait: 10000, timeout: 120000 }
+    );
 
     await prisma.wsusServer.update({
       where: { id: server.id },
@@ -695,11 +754,18 @@ export async function syncWsusServerById(
       durationMs: Date.now() - startedAt,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Sync failed";
+    const isCancelled =
+      signal?.aborted ||
+      (err instanceof Error && err.name === "AbortError");
+    const message = isCancelled
+      ? "Sync cancelled by user"
+      : err instanceof Error
+        ? err.message
+        : "Sync failed";
     await prisma.wsusServer.update({
       where: { id: server.id },
       data: {
-        lastStatus: "Failed",
+        lastStatus: isCancelled ? "Cancelled" : "Failed",
         lastError: message,
       },
     });
@@ -723,8 +789,9 @@ export async function startBackgroundSync(
   });
 
   for (const id of toStart) {
-    activeWsusSyncs.add(id);
-    void syncWsusServerById(id, scope, limits)
+    const controller = new AbortController();
+    activeWsusSyncs.set(id, controller);
+    void syncWsusServerById(id, scope, limits, controller.signal)
       .then(() => {
         try {
           revalidatePath("/", "layout");
@@ -733,10 +800,12 @@ export async function startBackgroundSync(
         }
       })
       .catch(() => {
-        // Error is already persisted to WsusServer.lastStatus/lastError
+        // Error or cancellation is already persisted to WsusServer.lastStatus/lastError
       })
       .finally(() => {
-        activeWsusSyncs.delete(id);
+        if (activeWsusSyncs.get(id) === controller) {
+          activeWsusSyncs.delete(id);
+        }
       });
   }
 
@@ -744,4 +813,34 @@ export async function startBackgroundSync(
     startedIds: toStart,
     alreadyRunningIds: serverIds.filter((id) => !toStart.includes(id)),
   };
+}
+
+export async function cancelBackgroundSync(serverIds?: number[]) {
+  const targets =
+    serverIds && serverIds.length > 0
+      ? serverIds
+      : Array.from(activeWsusSyncs.keys());
+
+  const cancelledIds: number[] = [];
+  for (const id of targets) {
+    const controller = activeWsusSyncs.get(id);
+    if (controller) {
+      controller.abort();
+      activeWsusSyncs.delete(id);
+      cancelledIds.push(id);
+    }
+  }
+
+  await prisma.wsusServer.updateMany({
+    where: {
+      ...(serverIds && serverIds.length > 0 ? { id: { in: serverIds } } : {}),
+      lastStatus: "Syncing",
+    },
+    data: {
+      lastStatus: "Cancelled",
+      lastError: "Sync cancelled by user",
+    },
+  });
+
+  return { cancelledIds };
 }

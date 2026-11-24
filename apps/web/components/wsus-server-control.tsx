@@ -15,6 +15,7 @@ import {
   Save,
   ShieldAlert,
   SlidersHorizontal,
+  Square,
   Trash2,
   X,
   XCircle,
@@ -100,6 +101,16 @@ const ENDPOINT_SCOPES: Array<{
   },
 ];
 
+async function parseJsonSafe<T>(res: Response): Promise<T | null> {
+  const text = await res.text().catch(() => "");
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
 export function WsusServerControl({
   initialServer,
   userRole,
@@ -117,6 +128,7 @@ export function WsusServerControl({
   const [startingScope, setStartingScope] = React.useState<SyncScope | null>(
     null
   );
+  const [cancelling, setCancelling] = React.useState(false);
   const [showLimits, setShowLimits] = React.useState(false);
   const [maxComputers, setMaxComputers] = React.useState("");
   const [maxUpdates, setMaxUpdates] = React.useState("");
@@ -150,8 +162,8 @@ export function WsusServerControl({
   const refreshServer = React.useCallback(async () => {
     const res = await fetch("/api/wsus-servers", { cache: "no-store" });
     if (!res.ok) return null;
-    const data = (await res.json()) as { servers?: WsusServerDetailItem[] };
-    const found = (data.servers ?? []).find((s) => s.id === server.id);
+    const data = await parseJsonSafe<{ servers?: WsusServerDetailItem[] }>(res);
+    const found = (data?.servers ?? []).find((s) => s.id === server.id);
     if (found) {
       setServer(found);
       return found;
@@ -188,9 +200,15 @@ export function WsusServerControl({
       const res = await fetch(`/api/wsus-servers/${server.id}/test`, {
         method: "POST",
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error ?? "Connection test failed");
+      const data = await parseJsonSafe<{
+        ok?: boolean;
+        error?: string;
+        health?: { status?: string };
+      }>(res);
+      if (!res.ok || !data?.ok) {
+        throw new Error(
+          data?.error ?? `Connection test failed (HTTP ${res.status})`
+        );
       }
       setFeedback({
         type: "success",
@@ -241,9 +259,13 @@ export function WsusServerControl({
           limits: buildLimitsPayload(),
         }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error ?? "Failed to start synchronization");
+      const data = await parseJsonSafe<{ success?: boolean; error?: string }>(
+        res
+      );
+      if (!res.ok || !data?.success) {
+        throw new Error(
+          data?.error ?? `Failed to start synchronization (HTTP ${res.status})`
+        );
       }
       setFeedback({
         type: "success",
@@ -260,6 +282,41 @@ export function WsusServerControl({
       });
     } finally {
       setStartingScope(null);
+    }
+  }
+
+  async function handleCancelSync() {
+    setCancelling(true);
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/wsus-sync", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serverId: server.id }),
+      });
+      const data = await parseJsonSafe<{ success?: boolean; error?: string }>(
+        res
+      );
+      if (!res.ok || !data?.success) {
+        throw new Error(
+          data?.error ?? `Failed to cancel synchronization (HTTP ${res.status})`
+        );
+      }
+      setFeedback({
+        type: "success",
+        message: "Synchronization cancelled.",
+      });
+      await refreshServer();
+      React.startTransition(() => {
+        router.refresh();
+      });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err instanceof Error ? err.message : "Cancel failed",
+      });
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -454,6 +511,22 @@ export function WsusServerControl({
           </div>
           {allowSync && (
             <div className="flex flex-wrap items-center gap-2">
+              {isSyncing && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={cancelling}
+                  onClick={handleCancelSync}
+                >
+                  {cancelling ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <Square className="mr-2 size-3.5 fill-current" />
+                  )}
+                  Cancel Sync
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"

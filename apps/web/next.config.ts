@@ -4,9 +4,6 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@workspace/ui"],
   cacheComponents: true,
   partialPrefetching: true,
-  experimental: {
-    proxyClientMaxBodySize: "100mb",
-  },
   turbopack: {
     rules: {
       "*.css": {

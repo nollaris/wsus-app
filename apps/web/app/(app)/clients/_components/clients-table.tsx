@@ -154,7 +154,7 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
       if (c.notInstalled > 0) needingUpdates++;
       if (c.failed > 0) withErrors++;
     }
-    const fleetScore = total > 0 ? (fullyCompliant / total) * 100 : 100;
+    const fleetScore = total > 0 ? (fullyCompliant / total) * 100 : 0;
     return {
       total,
       fullyCompliant,

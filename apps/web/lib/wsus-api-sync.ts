@@ -11,6 +11,8 @@ export const SYNC_SCOPES = [
 ] as const;
 export type SyncScope = (typeof SYNC_SCOPES)[number];
 
+const WSUS_REQUEST_INTERVAL_MS = 250;
+
 export interface SyncLimits {
   /** Maximum number of computers to fetch from /computers (0 or undefined = unlimited) */
   maxComputers?: number;
@@ -22,8 +24,6 @@ export interface SyncLimits {
   pageSize?: number;
   /** Max concurrent requests to the WSUS API (1..16, default 4) */
   concurrency?: number;
-  /** Optional delay in ms between requests per worker to throttle API load (0..5000, default 0) */
-  requestDelayMs?: number;
   /** Per-request HTTP timeout in ms (1000..120000, default 120000) */
   requestTimeoutMs?: number;
   /** Only fetch approved, non-declined updates from /updates */
@@ -38,7 +38,6 @@ interface ResolvedSyncLimits {
   maxClientDetailComputers: number | null;
   pageSize: number;
   concurrency: number;
-  requestDelayMs: number;
   requestTimeoutMs: number;
   approvedUpdatesOnly: boolean;
   skipInstalledClientPatches: boolean;
@@ -71,7 +70,6 @@ export function resolveSyncLimits(limits?: SyncLimits): ResolvedSyncLimits {
     ),
     pageSize: clampInt(limits?.pageSize ?? envInt("WSUS_SYNC_PAGE_SIZE"), 1, 500, 500),
     concurrency: clampInt(limits?.concurrency ?? envInt("WSUS_SYNC_CONCURRENCY"), 1, 16, 4),
-    requestDelayMs: clampInt(limits?.requestDelayMs ?? envInt("WSUS_SYNC_DELAY_MS"), 0, 5000, 0),
     requestTimeoutMs: clampInt(
       limits?.requestTimeoutMs ?? envInt("WSUS_SYNC_TIMEOUT_MS"),
       1000,
@@ -110,11 +108,16 @@ export function isValidSyncScope(value: unknown): value is SyncScope {
 
 const globalForSync = globalThis as unknown as {
   activeWsusSyncs?: Map<number, AbortController>;
+  wsusRequestNextAllowedAt?: Map<string, number>;
 };
 const activeWsusSyncs =
   globalForSync.activeWsusSyncs instanceof Map
     ? globalForSync.activeWsusSyncs
     : (globalForSync.activeWsusSyncs = new Map<number, AbortController>());
+const wsusRequestNextAllowedAt =
+  globalForSync.wsusRequestNextAllowedAt instanceof Map
+    ? globalForSync.wsusRequestNextAllowedAt
+    : (globalForSync.wsusRequestNextAllowedAt = new Map<string, number>());
 
 interface WsusApiEnvelope<T> {
   success: boolean;
@@ -203,12 +206,29 @@ function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, "");
 }
 
+async function waitForWsusRequestSlot(
+  baseUrl: string,
+  signal?: AbortSignal
+): Promise<void> {
+  if (signal?.aborted) {
+    throw new DOMException("Sync cancelled by user", "AbortError");
+  }
+
+  const key = normalizeBaseUrl(baseUrl);
+  const now = Date.now();
+  const scheduledAt = Math.max(now, wsusRequestNextAllowedAt.get(key) ?? now);
+  wsusRequestNextAllowedAt.set(key, scheduledAt + WSUS_REQUEST_INTERVAL_MS);
+  await sleep(scheduledAt - now, signal);
+}
+
 async function fetchFromWsus<T>(
   server: { baseUrl: string; apiKey: string },
   path: string,
   timeoutMs = 120000,
   signal?: AbortSignal
 ): Promise<WsusApiEnvelope<T>> {
+  await waitForWsusRequestSlot(server.baseUrl, signal);
+
   const url = `${normalizeBaseUrl(server.baseUrl)}${path}`;
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -253,7 +273,6 @@ async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
   worker: (item: T, index: number) => Promise<R>,
-  delayMs = 0,
   signal?: AbortSignal
 ): Promise<R[]> {
   if (items.length === 0) return [];
@@ -268,9 +287,6 @@ async function mapWithConcurrency<T, R>(
       const idx = nextIndex++;
       if (idx >= items.length) break;
       results[idx] = await worker(items[idx]!, idx);
-      if (delayMs > 0 && nextIndex < items.length) {
-        await sleep(delayMs, signal);
-      }
     }
   }
 
@@ -286,7 +302,6 @@ async function fetchAllPages<T>(
     pageSize: number;
     maxItems: number | null;
     concurrency: number;
-    delayMs: number;
     timeoutMs: number;
     signal?: AbortSignal;
   }
@@ -335,7 +350,6 @@ async function fetchAllPages<T>(
       );
       return res.data;
     },
-    options.delayMs,
     options.signal
   );
 
@@ -351,7 +365,6 @@ async function fetchComputerDetailsInBatches(
   options: {
     maxComputers: number | null;
     concurrency: number;
-    delayMs: number;
     timeoutMs: number;
     includeInstalled: boolean;
     signal?: AbortSignal;
@@ -385,7 +398,6 @@ async function fetchComputerDetailsInBatches(
         return null;
       }
     },
-    options.delayMs,
     options.signal
   );
 
@@ -421,7 +433,6 @@ export async function syncWsusServerById(
             pageSize: limits.pageSize,
             maxItems: limits.maxComputers,
             concurrency: limits.concurrency,
-            delayMs: limits.requestDelayMs,
             timeoutMs: limits.requestTimeoutMs,
             signal,
           })
@@ -431,7 +442,6 @@ export async function syncWsusServerById(
             pageSize: limits.pageSize,
             maxItems: limits.maxUpdates,
             concurrency: limits.concurrency,
-            delayMs: limits.requestDelayMs,
             timeoutMs: limits.requestTimeoutMs,
             signal,
           })
@@ -454,7 +464,6 @@ export async function syncWsusServerById(
       ? await fetchComputerDetailsInBatches(server, computers, {
           maxComputers: limits.maxClientDetailComputers,
           concurrency: limits.concurrency,
-          delayMs: limits.requestDelayMs,
           timeoutMs: limits.requestTimeoutMs,
           includeInstalled: !limits.skipInstalledClientPatches,
           signal,

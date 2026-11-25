@@ -142,7 +142,6 @@ export function WsusServerControl({
   const [maxUpdates, setMaxUpdates] = React.useState("");
   const [maxClientDetails, setMaxClientDetails] = React.useState("");
   const [concurrency, setConcurrency] = React.useState("4");
-  const [requestDelayMs, setRequestDelayMs] = React.useState("0");
   const [requestTimeoutSec, setRequestTimeoutSec] = React.useState("120");
   const [approvedUpdatesOnly, setApprovedUpdatesOnly] = React.useState(false);
   const [skipInstalledClientPatches, setSkipInstalledClientPatches] =
@@ -237,17 +236,12 @@ export function WsusServerControl({
       const n = Number(raw.trim());
       return Number.isFinite(n) && n > 0 ? Math.trunc(n) : undefined;
     };
-    const toNonNegInt = (raw: string): number | undefined => {
-      const n = Number(raw.trim());
-      return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : undefined;
-    };
     const timeoutSec = toPositiveInt(requestTimeoutSec);
     return {
       maxComputers: toPositiveInt(maxComputers),
       maxUpdates: toPositiveInt(maxUpdates),
       maxClientDetailComputers: toPositiveInt(maxClientDetails),
       concurrency: toPositiveInt(concurrency),
-      requestDelayMs: toNonNegInt(requestDelayMs),
       requestTimeoutMs: timeoutSec ? timeoutSec * 1000 : undefined,
       approvedUpdatesOnly,
       skipInstalledClientPatches,
@@ -617,19 +611,6 @@ export function WsusServerControl({
                     max={16}
                     value={concurrency}
                     onChange={(e) => setConcurrency(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="limit-delay" className="text-xs">
-                    Delay (ms)
-                  </Label>
-                  <Input
-                    id="limit-delay"
-                    type="number"
-                    min={0}
-                    max={5000}
-                    value={requestDelayMs}
-                    onChange={(e) => setRequestDelayMs(e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">

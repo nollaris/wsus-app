@@ -23,7 +23,6 @@ function parseSyncLimits(raw: unknown): SyncLimits | undefined {
     maxClientDetailComputers: parseOptionalNumber(obj.maxClientDetailComputers),
     pageSize: parseOptionalNumber(obj.pageSize),
     concurrency: parseOptionalNumber(obj.concurrency),
-    requestDelayMs: parseOptionalNumber(obj.requestDelayMs),
     requestTimeoutMs: parseOptionalNumber(obj.requestTimeoutMs),
     approvedUpdatesOnly:
       typeof obj.approvedUpdatesOnly === "boolean"

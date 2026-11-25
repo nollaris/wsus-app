@@ -45,9 +45,12 @@ export function computeDeviceCompliance(counts: {
 }) {
   const applicable =
     counts.installed + counts.pending + counts.failed + counts.unknown;
-  const score = applicable > 0 ? (counts.installed / applicable) * 100 : 100;
+  const score = applicable > 0 ? (counts.installed / applicable) * 100 : 0;
   const isFullyCompliant =
-    counts.pending === 0 && counts.failed === 0 && counts.unknown === 0;
+    applicable > 0 &&
+    counts.pending === 0 &&
+    counts.failed === 0 &&
+    counts.unknown === 0;
 
   return { applicable, score, isFullyCompliant };
 }

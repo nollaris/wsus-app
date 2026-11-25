@@ -119,13 +119,16 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
 
   const groups = useMemo(() => {
     const set = new Set<string>();
-    clients.forEach((c) => {
-      for (const g of splitTargetGroups(c.assignedTargetGroups)) {
+    const serverClients = clients.filter(
+      (c) => serverFilter === "all" || c.serverName === serverFilter
+    );
+    for (const client of serverClients) {
+      for (const g of splitTargetGroups(client.assignedTargetGroups)) {
         set.add(g);
       }
-    });
+    }
     return Array.from(set).sort();
-  }, [clients]);
+  }, [clients, serverFilter]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -319,6 +322,7 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                 value={serverFilter}
                 onValueChange={(v) => {
                   setServerFilter(v ?? "all");
+                  setGroupFilter("all");
                   setPage(1);
                 }}
               >

@@ -41,6 +41,12 @@ import {
 } from "@workspace/ui/components/ui/dialog";
 import { Input } from "@workspace/ui/components/ui/input";
 import { Label } from "@workspace/ui/components/ui/label";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@workspace/ui/components/ui/tabs";
 
 export interface WsusServerDetailItem {
   id: number;
@@ -55,6 +61,7 @@ export interface WsusServerDetailItem {
 interface WsusServerControlProps {
   initialServer: WsusServerDetailItem;
   userRole: string;
+  synchronizationContent?: React.ReactNode;
 }
 
 const ENDPOINT_SCOPES: Array<{
@@ -114,6 +121,7 @@ async function parseJsonSafe<T>(res: Response): Promise<T | null> {
 export function WsusServerControl({
   initialServer,
   userRole,
+  synchronizationContent,
 }: WsusServerControlProps) {
   const router = useRouter();
   const allowManage = canManageServers(userRole);
@@ -135,7 +143,7 @@ export function WsusServerControl({
   const [maxClientDetails, setMaxClientDetails] = React.useState("");
   const [concurrency, setConcurrency] = React.useState("4");
   const [requestDelayMs, setRequestDelayMs] = React.useState("0");
-  const [requestTimeoutSec, setRequestTimeoutSec] = React.useState("30");
+  const [requestTimeoutSec, setRequestTimeoutSec] = React.useState("120");
   const [approvedUpdatesOnly, setApprovedUpdatesOnly] = React.useState(false);
   const [skipInstalledClientPatches, setSkipInstalledClientPatches] =
     React.useState(false);
@@ -482,6 +490,27 @@ export function WsusServerControl({
         </Alert>
       )}
 
+      <Tabs defaultValue="sync" className="space-y-4">
+        <TabsList
+          className={
+            allowManage
+              ? "grid w-full max-w-sm grid-cols-2"
+              : "grid w-full max-w-[220px] grid-cols-1"
+          }
+        >
+          <TabsTrigger value="sync">
+            <RefreshCw />
+            Synchronization
+          </TabsTrigger>
+          {allowManage && (
+            <TabsTrigger value="settings">
+              <SlidersHorizontal />
+              Server settings
+            </TabsTrigger>
+          )}
+        </TabsList>
+
+        <TabsContent value="sync" className="space-y-4">
       {/* Sync & Endpoint Controls */}
       <Card>
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -489,24 +518,6 @@ export function WsusServerControl({
             <CardTitle>Synchronization Controls</CardTitle>
             <CardDescription className="mt-1">
               Test connectivity or trigger a full or per-endpoint sync.
-              {server.lastSyncedAt && (
-                <>
-                  {" "}
-                  Last synced:{" "}
-                  <span className="font-mono">
-                    {new Date(server.lastSyncedAt).toLocaleString("en-US", {
-                      year: "numeric",
-                      month: "short",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                      hour12: false,
-                      timeZone: "Asia/Bangkok",
-                    })}
-                  </span>
-                </>
-              )}
             </CardDescription>
           </div>
           {allowSync && (
@@ -623,7 +634,7 @@ export function WsusServerControl({
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="limit-timeout" className="text-xs">
-                    Timeout (sec)
+                    Timeout per request (sec)
                   </Label>
                   <Input
                     id="limit-timeout"
@@ -633,6 +644,9 @@ export function WsusServerControl({
                     value={requestTimeoutSec}
                     onChange={(e) => setRequestTimeoutSec(e.target.value)}
                   />
+                  <p className="text-[11px] text-muted-foreground">
+                    Default: 120 seconds per WSUS API request.
+                  </p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-6 text-xs">
@@ -709,9 +723,12 @@ export function WsusServerControl({
           )}
         </CardContent>
       </Card>
+          {synchronizationContent}
+        </TabsContent>
 
       {/* Server Configuration (Admin Only) */}
       {allowManage && (
+        <TabsContent value="settings" className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>Server Configuration</CardTitle>
@@ -805,7 +822,9 @@ export function WsusServerControl({
             </form>
           </CardContent>
         </Card>
+        </TabsContent>
       )}
+      </Tabs>
 
       {/* Overwrite API Key Dialog */}
       <Dialog

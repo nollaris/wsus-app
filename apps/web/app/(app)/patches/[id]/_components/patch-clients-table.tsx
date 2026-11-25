@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Search, ChevronLeft, ChevronRight, Monitor } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Monitor,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 import { Button } from "@workspace/ui/components/ui/button";
 import { Input } from "@workspace/ui/components/ui/input";
 import { Label } from "@workspace/ui/components/ui/label";
@@ -119,52 +125,71 @@ export function PatchClientsTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search computer, server, or IP..."
-            className="pl-9"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-          />
+      <section
+        aria-label="Patch client filters"
+        className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative min-w-0 flex-1">
+            <Label htmlFor="patch-clients-search" className="sr-only">
+              Search clients
+            </Label>
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="patch-clients-search"
+              placeholder="Search computer, server, or IP"
+              className="h-10 pl-9"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <SlidersHorizontal className="size-4" />
+            Filter clients
+          </div>
         </div>
-        <div className="hidden lg:flex items-center gap-2">
-          <Label
-            htmlFor="patch-clients-state-filter"
-            className="text-sm text-muted-foreground whitespace-nowrap"
-          >
-            Install State
-          </Label>
-          <Select
-            value={stateFilter}
-            onValueChange={(v) => {
-              setStateFilter(v ?? "all");
-              setPage(1);
-            }}
-          >
-            <SelectTrigger id="patch-clients-state-filter" className="w-[180px]">
-              <SelectValue placeholder="Installation State">
-                {stateFilter === "all" ? "All States" : stateFilter}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All States</SelectItem>
-              {states.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {filtered.length} of {clientStatuses.length}
-          </span>
+
+        <div className="grid gap-3 border-t pt-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <div className="min-w-0 space-y-1.5 sm:max-w-sm">
+            <Label
+              htmlFor="patch-clients-state-filter"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Installation state
+            </Label>
+            <Select
+              value={stateFilter}
+              onValueChange={(v) => {
+                setStateFilter(v ?? "all");
+                setPage(1);
+              }}
+            >
+              <SelectTrigger
+                id="patch-clients-state-filter"
+                className="w-full"
+              >
+                <SelectValue className="truncate">
+                  {stateFilter === "all" ? "All states" : stateFilter}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All states</SelectItem>
+                {states.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-xs text-muted-foreground sm:pb-2 sm:text-right">
+            {filtered.length} of {clientStatuses.length} clients
+          </p>
         </div>
-      </div>
+      </section>
 
       <div className="rounded-md border bg-background">
         <Table>

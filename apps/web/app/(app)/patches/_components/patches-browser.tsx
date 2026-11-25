@@ -2,11 +2,26 @@
 
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
-import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Package,
+  Search,
+  ShieldAlert,
+  SlidersHorizontal,
+  XCircle,
+} from "lucide-react";
 import { Input } from "@workspace/ui/components/ui/input";
 import { Label } from "@workspace/ui/components/ui/label";
 import { Button } from "@workspace/ui/components/ui/button";
 import { Badge } from "@workspace/ui/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardTitle,
+} from "@workspace/ui/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -40,6 +55,13 @@ interface PatchInventoryItem {
   isSuperseded: boolean;
   updateType: string;
   description: string;
+}
+
+interface PatchInventoryStats {
+  total: number;
+  approved: number;
+  declined: number;
+  critical: number;
 }
 
 const SEVERITY_BADGE: Record<string, string> = {
@@ -92,6 +114,7 @@ export function PatchesBrowser({
   const [inventoryItems, setInventoryItems] = useState<PatchInventoryItem[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [stats, setStats] = useState<PatchInventoryStats | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -123,6 +146,7 @@ export function PatchesBrowser({
       setInventoryItems(data.items ?? []);
       setTotal(data.total ?? 0);
       setTotalPages(data.totalPages ?? 1);
+      setStats(data.stats ?? null);
     } finally {
       setLoading(false);
     }
@@ -150,142 +174,224 @@ export function PatchesBrowser({
     };
   }, [fetchData]);
 
+  const statCards = [
+    {
+      label: "Matching patches",
+      value: stats?.total,
+      icon: Package,
+      iconClass: "bg-primary/10 text-primary",
+    },
+    {
+      label: "Approved",
+      value: stats?.approved,
+      icon: CheckCircle2,
+      iconClass: "bg-emerald-500/10 text-emerald-700",
+    },
+    {
+      label: "Declined",
+      value: stats?.declined,
+      icon: XCircle,
+      iconClass: "bg-muted text-muted-foreground",
+    },
+    {
+      label: "Critical severity",
+      value: stats?.critical,
+      icon: ShieldAlert,
+      iconClass: "bg-destructive/10 text-destructive",
+    },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative w-full lg:max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search title, KB, or product..."
-            className="pl-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+      <section aria-label="Patch inventory statistics" className="space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold">Inventory overview</h2>
+          <p className="text-xs text-muted-foreground">
+            Counts update with the active filters
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {statCards.map((stat) => {
+            const Icon = stat.icon;
+            return (
+              <Card key={stat.label} size="sm">
+                <CardContent className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <CardDescription>{stat.label}</CardDescription>
+                    <CardTitle className="mt-1 font-mono text-2xl tabular-nums">
+                      {stat.value === undefined ? (
+                        <Skeleton className="mt-1 h-7 w-16" />
+                      ) : (
+                        stat.value.toLocaleString()
+                      )}
+                    </CardTitle>
+                  </div>
+                  <div
+                    className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${stat.iconClass}`}
+                  >
+                    <Icon className="size-5" />
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
+      <section
+        aria-label="Patch inventory filters"
+        className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative min-w-0 flex-1">
+            <Label htmlFor="patches-search" className="sr-only">
+              Search patches
+            </Label>
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="patches-search"
+              placeholder="Search by title, KB, or product"
+              className="h-10 pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <SlidersHorizontal className="size-4" />
+            Filter inventory
+          </div>
         </div>
 
-          <div className="hidden xl:flex flex-wrap items-center gap-3">
-            {servers.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Label
-                  htmlFor="patches-server-filter"
-                  className="text-sm text-muted-foreground whitespace-nowrap"
-                >
-                  Server
-                </Label>
-                <Select
-                  value={serverFilter}
-                  onValueChange={(v) => {
-                    setServerFilter(v ?? "all");
-                    setPage(1);
-                  }}
-                >
-                  <SelectTrigger id="patches-server-filter" className="w-[160px]">
-                    <SelectValue placeholder="WSUS Server">
-                      {serverFilter === "all" ? "All Servers" : serverFilter}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Servers</SelectItem>
-                    {servers.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <div className="flex items-center gap-2">
+        <div className="grid gap-3 border-t pt-4 sm:grid-cols-2 xl:grid-cols-4">
+          {servers.length > 0 && (
+            <div className="min-w-0 space-y-1.5">
               <Label
-                htmlFor="patches-classification-filter"
-                className="text-sm text-muted-foreground whitespace-nowrap"
+                htmlFor="patches-server-filter"
+                className="text-xs font-medium text-muted-foreground"
               >
-                Classification
+                WSUS server
               </Label>
               <Select
-                value={classification}
+                value={serverFilter}
                 onValueChange={(v) => {
-                  setClassification(v ?? "all");
+                  setServerFilter(v ?? "all");
                   setPage(1);
                 }}
               >
-                <SelectTrigger id="patches-classification-filter" className="w-[180px]">
-                  <SelectValue placeholder="Classification">
-                    {classification === "all" ? "All Classifications" : classification}
+                <SelectTrigger id="patches-server-filter" className="w-full">
+                  <SelectValue className="truncate">
+                    {serverFilter === "all" ? "All servers" : serverFilter}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Classifications</SelectItem>
-                  {classifications.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                  <SelectItem value="all">All servers</SelectItem>
+                  {servers.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+          )}
 
-                <div className="flex items-center gap-2">
-                  <Label
-                    htmlFor="patches-severity-filter"
-                    className="text-sm text-muted-foreground whitespace-nowrap"
-                  >
-                    Severity
-                  </Label>
-                  <Select
-                    value={severity}
-                    onValueChange={(v) => {
-                      setSeverity(v ?? "all");
-                      setPage(1);
-                    }}
-                  >
-                    <SelectTrigger id="patches-severity-filter" className="w-[150px]">
-                      <SelectValue placeholder="Severity">
-                        {severity === "all" ? "All Severities" : severity}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Severities</SelectItem>
-                      {severities.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {s}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Label
-                    htmlFor="patches-approval-filter"
-                    className="text-sm text-muted-foreground whitespace-nowrap"
-                  >
-                    Approval
-                  </Label>
-                  <Select
-                    value={approved}
-                    onValueChange={(v) => {
-                      setApproved(v ?? "all");
-                      setPage(1);
-                    }}
-                  >
-                    <SelectTrigger id="patches-approval-filter" className="w-[150px]">
-                      <SelectValue placeholder="Approval">
-                        {approved === "all"
-                          ? "All Approvals"
-                          : approved === "approved"
-                            ? "Approved Only"
-                            : "Declined Only"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Approvals</SelectItem>
-                      <SelectItem value="approved">Approved Only</SelectItem>
-                      <SelectItem value="declined">Declined Only</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+          <div className="min-w-0 space-y-1.5">
+            <Label
+              htmlFor="patches-classification-filter"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Classification
+            </Label>
+            <Select
+              value={classification}
+              onValueChange={(v) => {
+                setClassification(v ?? "all");
+                setPage(1);
+              }}
+            >
+              <SelectTrigger
+                id="patches-classification-filter"
+                className="w-full"
+              >
+                <SelectValue className="truncate">
+                  {classification === "all"
+                    ? "All classifications"
+                    : classification}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All classifications</SelectItem>
+                {classifications.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="min-w-0 space-y-1.5">
+            <Label
+              htmlFor="patches-severity-filter"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Severity
+            </Label>
+            <Select
+              value={severity}
+              onValueChange={(v) => {
+                setSeverity(v ?? "all");
+                setPage(1);
+              }}
+            >
+              <SelectTrigger id="patches-severity-filter" className="w-full">
+                <SelectValue className="truncate">
+                  {severity === "all" ? "All severities" : severity}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All severities</SelectItem>
+                {severities.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="min-w-0 space-y-1.5">
+            <Label
+              htmlFor="patches-approval-filter"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Approval
+            </Label>
+            <Select
+              value={approved}
+              onValueChange={(v) => {
+                setApproved(v ?? "all");
+                setPage(1);
+              }}
+            >
+              <SelectTrigger id="patches-approval-filter" className="w-full">
+                <SelectValue className="truncate">
+                  {approved === "all"
+                    ? "All approvals"
+                    : approved === "approved"
+                      ? "Approved only"
+                      : "Declined only"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All approvals</SelectItem>
+                <SelectItem value="approved">Approved only</SelectItem>
+                <SelectItem value="declined">Declined only</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
+      </section>
 
         <div className="rounded-md border bg-background min-w-0 overflow-hidden">
           <Table className="[&_th]:px-2.5 [&_td]:px-2.5">

@@ -24,7 +24,7 @@ export interface SyncLimits {
   concurrency?: number;
   /** Optional delay in ms between requests per worker to throttle API load (0..5000, default 0) */
   requestDelayMs?: number;
-  /** Per-request HTTP timeout in ms (1000..120000, default 30000) */
+  /** Per-request HTTP timeout in ms (1000..120000, default 120000) */
   requestTimeoutMs?: number;
   /** Only fetch approved, non-declined updates from /updates */
   approvedUpdatesOnly?: boolean;
@@ -76,7 +76,7 @@ export function resolveSyncLimits(limits?: SyncLimits): ResolvedSyncLimits {
       limits?.requestTimeoutMs ?? envInt("WSUS_SYNC_TIMEOUT_MS"),
       1000,
       120000,
-      30000
+      120000
     ),
     approvedUpdatesOnly: Boolean(limits?.approvedUpdatesOnly),
     skipInstalledClientPatches: Boolean(limits?.skipInstalledClientPatches),
@@ -206,7 +206,7 @@ function normalizeBaseUrl(baseUrl: string): string {
 async function fetchFromWsus<T>(
   server: { baseUrl: string; apiKey: string },
   path: string,
-  timeoutMs = 30000,
+  timeoutMs = 120000,
   signal?: AbortSignal
 ): Promise<WsusApiEnvelope<T>> {
   const url = `${normalizeBaseUrl(server.baseUrl)}${path}`;
@@ -750,8 +750,13 @@ export async function syncWsusServerById(
     const isCancelled =
       signal?.aborted ||
       (err instanceof Error && err.name === "AbortError");
+    const isTimeout =
+      err instanceof Error &&
+      (err.name === "TimeoutError" || /timed?\s*out|timeout/i.test(err.message));
     const message = isCancelled
       ? "Sync cancelled by user"
+      : isTimeout
+        ? `WSUS API request timed out after ${Math.round(limits.requestTimeoutMs / 1000)} seconds. This is a response-timeout, not an API-key rejection. Check WSUS/network responsiveness or adjust the request timeout.`
       : err instanceof Error
         ? err.message
         : "Sync failed";

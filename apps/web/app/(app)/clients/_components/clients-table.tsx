@@ -7,6 +7,7 @@ import {
   Monitor,
   ChevronLeft,
   ChevronRight,
+  SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@workspace/ui/components/ui/button";
 import { Input } from "@workspace/ui/components/ui/input";
@@ -278,27 +279,41 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
           </CardContent>
         </Card>
       </div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search computer name..."
-            className="pl-9"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-          />
+      <section
+        aria-label="Client filters"
+        className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative min-w-0 flex-1">
+            <Label htmlFor="clients-search" className="sr-only">
+              Search clients
+            </Label>
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="clients-search"
+              placeholder="Search computer name"
+              className="h-10 pl-9"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <SlidersHorizontal className="size-4" />
+            Filter clients
+          </div>
         </div>
-        <div className="hidden xl:flex flex-wrap items-center gap-2">
+
+        <div className="grid gap-3 border-t pt-4 sm:grid-cols-2">
           {servers.length > 0 && (
-            <>
+            <div className="min-w-0 space-y-1.5">
               <Label
                 htmlFor="clients-server-filter"
-                className="text-sm text-muted-foreground whitespace-nowrap"
+                className="text-xs font-medium text-muted-foreground"
               >
-                Server
+                WSUS server
               </Label>
               <Select
                 value={serverFilter}
@@ -307,13 +322,13 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                   setPage(1);
                 }}
               >
-                <SelectTrigger id="clients-server-filter" className="w-[170px]">
-                  <SelectValue placeholder="WSUS Server">
-                    {serverFilter === "all" ? "All Servers" : serverFilter}
+                <SelectTrigger id="clients-server-filter" className="w-full">
+                  <SelectValue className="truncate">
+                    {serverFilter === "all" ? "All servers" : serverFilter}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Servers</SelectItem>
+                  <SelectItem value="all">All servers</SelectItem>
                   {servers.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
@@ -321,37 +336,42 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                   ))}
                 </SelectContent>
               </Select>
-            </>
+            </div>
           )}
-          <Label
-            htmlFor="clients-target-group-filter"
-            className="text-sm text-muted-foreground whitespace-nowrap"
-          >
-            Target Group
-          </Label>
-          <Select
-            value={groupFilter}
-            onValueChange={(v) => {
-              setGroupFilter(v ?? "all");
-              setPage(1);
-            }}
-          >
-            <SelectTrigger id="clients-target-group-filter" className="w-[200px]">
-              <SelectValue placeholder="Target Group">
-                {groupFilter === "all" ? "All Target Groups" : groupFilter}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Target Groups</SelectItem>
-              {groups.map((g) => (
-                <SelectItem key={g} value={g}>
-                  {g}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="min-w-0 space-y-1.5">
+            <Label
+              htmlFor="clients-target-group-filter"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Target group
+            </Label>
+            <Select
+              value={groupFilter}
+              onValueChange={(v) => {
+                setGroupFilter(v ?? "all");
+                setPage(1);
+              }}
+            >
+              <SelectTrigger
+                id="clients-target-group-filter"
+                className="w-full"
+              >
+                <SelectValue className="truncate">
+                  {groupFilter === "all" ? "All target groups" : groupFilter}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All target groups</SelectItem>
+                {groups.map((g) => (
+                  <SelectItem key={g} value={g}>
+                    {g}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-      </div>
+      </section>
 
       <div className="rounded-md border bg-background min-w-0 overflow-hidden">
         <Table className="[&_th]:px-2 [&_td]:px-2 text-xs">

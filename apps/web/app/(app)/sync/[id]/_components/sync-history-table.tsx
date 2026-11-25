@@ -31,8 +31,35 @@ export interface SyncHistoryRow {
   errorText: string | null;
 }
 
-function formatUtcTimestamp(iso: string | null): string {
-  return iso ? iso.replace("T", " ").slice(0, 19) : "-";
+function formatBangkokTimestamp(iso: string | null): string {
+  if (!iso) return "-";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("en-GB", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Bangkok",
+  });
+}
+
+function getResultBadgeClass(result: string): string {
+  const normalized = result.trim().toLowerCase();
+  if (normalized === "succeeded" || normalized === "success") {
+    return "bg-emerald-500/15 text-emerald-700";
+  }
+  if (normalized === "failed" || normalized === "failure" || normalized === "error") {
+    return "bg-destructive/15 text-destructive";
+  }
+  if (normalized === "cancelled" || normalized === "canceled") {
+    return "bg-amber-500/15 text-amber-700";
+  }
+  if (normalized === "in progress" || normalized === "running") {
+    return "bg-sky-500/15 text-sky-700";
+  }
+  return "";
 }
 
 export function SyncHistoryTable({ rows }: { rows: SyncHistoryRow[] }) {
@@ -46,23 +73,22 @@ export function SyncHistoryTable({ rows }: { rows: SyncHistoryRow[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md border">
-        <Table>
+      <div className="overflow-x-auto rounded-md border">
+        <Table className="min-w-[680px]">
           <TableHeader>
             <TableRow>
-              <TableHead>Server</TableHead>
-              <TableHead>Start Time</TableHead>
-              <TableHead>End Time</TableHead>
+              <TableHead>Started · ICT</TableHead>
+              <TableHead>Ended · ICT</TableHead>
               <TableHead>Trigger</TableHead>
               <TableHead>Result</TableHead>
-              <TableHead>Error</TableHead>
+              <TableHead>Details</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {pagedRows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={5}
                   className="py-8 text-center text-sm text-muted-foreground"
                 >
                   No synchronization history records found.
@@ -71,14 +97,11 @@ export function SyncHistoryTable({ rows }: { rows: SyncHistoryRow[] }) {
             ) : (
               pagedRows.map((h) => (
                 <TableRow key={`${h.serverName}-${h.synchronizationId}`}>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {h.serverName || "-"}
+                  <TableCell className="font-mono text-xs">
+                    {formatBangkokTimestamp(h.startTime)}
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    {formatUtcTimestamp(h.startTime)}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {formatUtcTimestamp(h.endTime)}
+                    {formatBangkokTimestamp(h.endTime)}
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">
@@ -88,16 +111,12 @@ export function SyncHistoryTable({ rows }: { rows: SyncHistoryRow[] }) {
                   <TableCell>
                     <Badge
                       variant="secondary"
-                      className={
-                        h.result === "Succeeded"
-                          ? "bg-emerald-500/15 text-emerald-700"
-                          : "bg-destructive/15 text-destructive"
-                      }
+                      className={getResultBadgeClass(h.result)}
                     >
                       {h.result}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
+                  <TableCell className="max-w-[320px] whitespace-normal break-words text-xs text-muted-foreground">
                     {h.errorText || h.error || "-"}
                   </TableCell>
                 </TableRow>

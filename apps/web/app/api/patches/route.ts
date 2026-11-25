@@ -70,7 +70,7 @@ export async function GET(request: Request) {
       `ORDER BY ${sortColumn} ${sortDirection}${nullsOrder}, "title" ASC`
     );
 
-    const [items, countRows] = await Promise.all([
+    const [items, statsRows] = await Promise.all([
       prisma.$queryRaw<
         Array<{
           serverName: string;
@@ -114,14 +114,43 @@ export async function GET(request: Request) {
         ${outerOrderBy}
         LIMIT ${pageSize} OFFSET ${skip}
       `),
-      prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
-        SELECT COUNT(DISTINCT "updateId")::int AS count
-        FROM "PatchInventory"
-        ${whereClause}
+      prisma.$queryRaw<
+        Array<{
+          total: number;
+          approved: number;
+          declined: number;
+          critical: number;
+        }>
+      >(Prisma.sql`
+        WITH deduped AS (
+          SELECT DISTINCT ON ("updateId")
+            "updateId",
+            "msrcSeverity",
+            "isApproved",
+            "isDeclined",
+            "isLatestRevision",
+            "revisionNumber",
+            "arrivalDate"
+          FROM "PatchInventory"
+          ${whereClause}
+          ORDER BY "updateId", "isLatestRevision" DESC, "revisionNumber" DESC, "isApproved" DESC, "arrivalDate" DESC NULLS LAST
+        )
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE "isApproved")::int AS approved,
+          COUNT(*) FILTER (WHERE "isDeclined")::int AS declined,
+          COUNT(*) FILTER (WHERE LOWER("msrcSeverity") = 'critical')::int AS critical
+        FROM deduped
       `),
     ]);
 
-    const total = countRows[0]?.count ?? 0;
+    const stats = statsRows[0] ?? {
+      total: 0,
+      approved: 0,
+      declined: 0,
+      critical: 0,
+    };
+    const total = stats.total;
 
     return NextResponse.json({
       items,
@@ -129,6 +158,7 @@ export async function GET(request: Request) {
       page,
       pageSize,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      stats,
     });
   }
 

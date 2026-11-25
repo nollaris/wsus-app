@@ -139,14 +139,36 @@ model SynchronizationSetting {
 }
 
 model WsusServer {
-  id           Int       @id @default(autoincrement())
-  name         String
-  baseUrl      String    @unique
-  apiKey       String
-  enabled      Boolean   @default(true)
-  lastSyncedAt DateTime?
-  lastStatus   String?
-  lastError    String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                Int                    @id @default(autoincrement())
+  name              String
+  baseUrl           String                 @unique
+  apiKey            String
+  enabled           Boolean                @default(true)
+  lastSyncedAt      DateTime?
+  lastStatus        String?
+  lastError         String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  approvalSchedules WsusApprovalSchedule[]
+}
+
+model WsusApprovalSchedule {
+  id              Int        @id @default(autoincrement())
+  serverId        Int
+  updateId        String
+  revisionNumber  Int
+  updateTitle     String
+  targetGroupId   String
+  targetGroupName String
+  scheduledAt     DateTime
+  status          String     @default("pending")
+  createdBy       String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  executedAt      DateTime?
+  error           String?
+  server          WsusServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId, status, scheduledAt])
+  @@index([status, scheduledAt])
 }

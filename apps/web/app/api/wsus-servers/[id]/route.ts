@@ -101,6 +101,19 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid server ID" }, { status: 400 });
   }
 
+  const approvalSchedules = await prisma.wsusApprovalSchedule.count({
+    where: {
+      serverId,
+      status: { in: ["pending", "processing"] },
+    },
+  });
+  if (approvalSchedules > 0) {
+    return NextResponse.json(
+      { error: "Cancel or wait for scheduled approvals before deleting this WSUS server." },
+      { status: 409 }
+    );
+  }
+
   await prisma.wsusServer.delete({ where: { id: serverId } });
   return NextResponse.json({ success: true });
 }

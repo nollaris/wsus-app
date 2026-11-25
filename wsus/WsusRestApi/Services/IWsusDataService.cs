@@ -27,5 +27,9 @@ namespace WsusRestApi.Services
         ComputerDetailDto FetchComputerDetail(string computerId);
         UpdateDetailDto FetchUpdateDetail(string updateId, int? revisionNumber = null);
         GroupDetailDto FetchGroupDetail(string groupId);
+        GroupDto CreateComputerTargetGroup(string name);
+        GroupDto AddComputerToGroup(string groupId, string computerId);
+        void StartSynchronization();
+        bool ApproveUpdate(string updateId, int? revisionNumber, string targetGroupId);
     }
 }

@@ -31,6 +31,7 @@ namespace WsusRestApiInstaller
             public string InstallDir = @"C:\inetpub\wsus-api";
             public int Port = 8530;
             public bool RegenerateTokens;
+            public bool EnableWriteOperations;
             public string SourceDir;
             public bool PauseOnExit;
             public bool ShowHelp;
@@ -104,6 +105,10 @@ namespace WsusRestApiInstaller
                 else if (lower == "-regeneratetokens" || lower == "--regenerate-tokens")
                 {
                     opts.RegenerateTokens = true;
+                }
+                else if (lower == "--enable-write-operations")
+                {
+                    opts.EnableWriteOperations = true;
                 }
                 else if (lower == "--pause-on-exit")
                 {
@@ -184,6 +189,7 @@ namespace WsusRestApiInstaller
             Console.WriteLine("  --app-pool <name>        IIS AppPool name (default: WsusRestApiPool)");
             Console.WriteLine("  --install-dir <dir>      Target install directory (default: C:\\inetpub\\wsus-api)");
             Console.WriteLine("  --port <port>            IIS site port (default: 8530)");
+            Console.WriteLine("  --enable-write-operations  Grant the AppPool WSUS Administrators membership");
             Console.WriteLine("  --regenerate-tokens      Rotate X-Api-Key and Bearer Token in security.json");
             Console.WriteLine("  --help                   Show this help message");
         }
@@ -421,6 +427,11 @@ namespace WsusRestApiInstaller
             string appPoolIdentity = @"IIS AppPool\" + opts.AppPoolName;
             WriteStep("Granting read-only WSUS access (" + appPoolIdentity + " -> WSUS Reporters)...");
             AddToWsusReportersGroup(appPoolIdentity, opts.AppPoolName);
+            if (opts.EnableWriteOperations)
+            {
+                WriteStep("Granting WSUS write access (" + appPoolIdentity + " -> WSUS Administrators)...");
+                AddToWsusAdministratorsGroup(appPoolIdentity, opts.AppPoolName);
+            }
 
             // 9. Grant NTFS permissions on InstallDir & App_Data\Logs
             WriteStep("Setting NTFS permissions...");
@@ -548,35 +559,45 @@ namespace WsusRestApiInstaller
 
         private static void AddToWsusReportersGroup(string appPoolIdentity, string appPoolName)
         {
+            AddToWsusLocalGroup(appPoolIdentity, appPoolName, "WSUS Reporters");
+        }
+
+        private static void AddToWsusAdministratorsGroup(string appPoolIdentity, string appPoolName)
+        {
+            AddToWsusLocalGroup(appPoolIdentity, appPoolName, "WSUS Administrators");
+        }
+
+        private static void AddToWsusLocalGroup(string appPoolIdentity, string appPoolName, string groupName)
+        {
             try
             {
-                CommandResult groupCheck = RunProcess("net.exe", "localgroup \"WSUS Reporters\"");
+                CommandResult groupCheck = RunProcess("net.exe", "localgroup " + QuoteArg(groupName));
                 if (groupCheck.ExitCode != 0)
                 {
-                    WriteWarn("Local group 'WSUS Reporters' not found. Ensure the AppPool identity has read access to WSUS.");
+                    WriteWarn("Local group '" + groupName + "' not found. Add the AppPool identity to it manually if required.");
                     return;
                 }
 
                 if (groupCheck.StdOut.IndexOf(appPoolName, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    WriteOk("'" + appPoolIdentity + "' is already a member of 'WSUS Reporters'.");
+                    WriteOk("'" + appPoolIdentity + "' is already a member of '" + groupName + "'.");
                     return;
                 }
 
-                CommandResult addRes = RunProcess("net.exe", "localgroup \"WSUS Reporters\" " + QuoteArg(appPoolIdentity) + " /add");
+                CommandResult addRes = RunProcess("net.exe", "localgroup " + QuoteArg(groupName) + " " + QuoteArg(appPoolIdentity) + " /add");
                 if (addRes.ExitCode == 0)
                 {
-                    WriteOk("Added '" + appPoolIdentity + "' to 'WSUS Reporters'.");
+                    WriteOk("Added '" + appPoolIdentity + "' to '" + groupName + "'.");
                 }
                 else
                 {
                     string err = string.IsNullOrEmpty(addRes.StdErr) ? addRes.StdOut : addRes.StdErr;
-                    WriteWarn("Could not update 'WSUS Reporters' group automatically: " + err.Trim());
+                    WriteWarn("Could not update '" + groupName + "' group automatically: " + err.Trim());
                 }
             }
             catch (Exception ex)
             {
-                WriteWarn("Could not update 'WSUS Reporters' group automatically: " + ex.Message);
+                WriteWarn("Could not update '" + groupName + "' group automatically: " + ex.Message);
             }
         }
 

@@ -31,6 +31,7 @@ const NAV_ITEMS = [
   { title: "Client Status", url: "/clients", icon: Monitor, adminOnly: false },
   { title: "Patches", url: "/patches", icon: ShieldAlert, adminOnly: false },
   { title: "Sync & Servers", url: "/sync", icon: RefreshCw, adminOnly: false },
+  { title: "WSUS Control", url: "/wsus-control", icon: ShieldCheck, adminOnly: true },
   { title: "Users", url: "/users", icon: Users, adminOnly: true },
   { title: "Settings", url: "/settings", icon: Settings2, adminOnly: false },
 ];

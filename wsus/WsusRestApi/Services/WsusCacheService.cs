@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Runtime.Caching;
 using System.Threading;
 using WsusRestApi.Configuration;
@@ -52,6 +53,22 @@ namespace WsusRestApi.Services
         public void RecordError(Exception ex)
         {
             LastError = ex.Message;
+        }
+
+        public void InvalidateSnapshot()
+        {
+            List<string> keys = new List<string>();
+            foreach (KeyValuePair<string, object> item in _cache)
+            {
+                if (item.Key.StartsWith("wsus:local:", StringComparison.OrdinalIgnoreCase))
+                {
+                    keys.Add(item.Key);
+                }
+            }
+            foreach (string key in keys)
+            {
+                _cache.Remove(key);
+            }
         }
 
         public CachedValue<ComputerDetailDto> GetOrRefreshComputerDetail(string computerId, IWsusDataService dataService)

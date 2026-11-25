@@ -1,6 +1,16 @@
 # WSUS Portal (`wsus-app`)
 
-A Next.js + Prisma + PostgreSQL dashboard for browsing WSUS patch inventory, client compliance status, synchronization history, and importing WSUS CSV exports.
+A Next.js + Prisma + PostgreSQL dashboard for browsing WSUS patch inventory, client compliance status, synchronization history, and controlling selected WSUS operations.
+
+Administrators can create computer groups, add computers to groups, start upstream synchronization, and approve patches immediately or at a scheduled time from **WSUS Control**. The WSUS REST API keeps write operations disabled at install time unless `--enable-write-operations` is specified; future approvals require the portal's persistent Node.js scheduler and the `WsusApprovalSchedule` database migration.
+
+Before using scheduled approvals on an existing installation, apply the additive migration with:
+
+```bash
+pnpm --filter @wsus-app/web exec prisma migrate deploy
+```
+
+Run the portal as a persistent Node.js server so the in-process scheduler can execute due approvals.
 
 ## Prerequisites
 

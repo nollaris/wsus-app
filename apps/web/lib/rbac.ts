@@ -44,6 +44,10 @@ export function canTriggerSync(role: string | undefined | null): boolean {
   return hasRole(role, ["admin", "operator"]);
 }
 
+export function canControlWsus(role: string | undefined | null): boolean {
+  return hasRole(role, ["admin"]);
+}
+
 export function canResetDatabase(role: string | undefined | null): boolean {
   return hasRole(role, ["admin"]);
 }

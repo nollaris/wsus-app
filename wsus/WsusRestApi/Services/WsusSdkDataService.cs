@@ -8,7 +8,7 @@ using WsusRestApi.Models;
 namespace WsusRestApi.Services
 {
     /// <summary>
-    /// Strictly read-only local WSUS SDK data collector (no remoting, C# 5 compatible).
+    /// Local WSUS SDK data and selected control operations (no remoting, C# 5 compatible).
     /// </summary>
     public sealed class WsusSdkDataService : IWsusDataService
     {
@@ -283,6 +283,88 @@ namespace WsusRestApi.Services
                 Group = groupDto,
                 Computers = computers
             };
+        }
+
+        public GroupDto CreateComputerTargetGroup(string name)
+        {
+            IUpdateServer server = _connectionFactory.ConnectLocal();
+            IComputerTargetGroup group = server.CreateComputerTargetGroup(name);
+            WsusCacheService.Instance.InvalidateSnapshot();
+
+            return new GroupDto
+            {
+                GroupId = group.Id.ToString(),
+                ServerId = ApiConfigProvider.Instance.GetWsusSettings().ResolvedServerId,
+                Name = group.Name
+            };
+        }
+
+        public GroupDto AddComputerToGroup(string groupId, string computerId)
+        {
+            Guid parsedGroupId;
+            if (!Guid.TryParse(groupId, out parsedGroupId))
+                throw new ArgumentException("A valid groupId is required.", "groupId");
+
+            IUpdateServer server = _connectionFactory.ConnectLocal();
+            IComputerTargetGroup group = server.GetComputerTargetGroup(parsedGroupId);
+            if (group == null)
+                throw new KeyNotFoundException("Computer group was not found.");
+
+            IComputerTarget target = server.GetComputerTarget(computerId);
+            if (target == null)
+                throw new KeyNotFoundException("Computer was not found.");
+
+            group.AddComputerTarget(target);
+            WsusCacheService.Instance.InvalidateSnapshot();
+
+            return new GroupDto
+            {
+                GroupId = group.Id.ToString(),
+                ServerId = ApiConfigProvider.Instance.GetWsusSettings().ResolvedServerId,
+                Name = group.Name
+            };
+        }
+
+        public void StartSynchronization()
+        {
+            IUpdateServer server = _connectionFactory.ConnectLocal();
+            server.GetSubscription().StartSynchronization();
+            WsusCacheService.Instance.InvalidateSnapshot();
+        }
+
+        public bool ApproveUpdate(string updateId, int? revisionNumber, string targetGroupId)
+        {
+            Guid parsedUpdateId;
+            Guid parsedGroupId;
+            if (!Guid.TryParse(updateId, out parsedUpdateId))
+                throw new ArgumentException("A valid updateId is required.", "updateId");
+            if (!Guid.TryParse(targetGroupId, out parsedGroupId))
+                throw new ArgumentException("A valid targetGroupId is required.", "targetGroupId");
+
+            IUpdateServer server = _connectionFactory.ConnectLocal();
+            IComputerTargetGroup group = server.GetComputerTargetGroup(parsedGroupId);
+            if (group == null)
+                throw new KeyNotFoundException("Target computer group was not found.");
+
+            UpdateRevisionId revisionId = revisionNumber.HasValue
+                ? new UpdateRevisionId(parsedUpdateId, revisionNumber.Value)
+                : new UpdateRevisionId(parsedUpdateId);
+            IUpdate update = server.GetUpdate(revisionId);
+            if (update == null)
+                throw new KeyNotFoundException("Update was not found.");
+
+            foreach (IUpdateApproval approval in update.GetUpdateApprovals())
+            {
+                if (approval.ComputerTargetGroupId == parsedGroupId &&
+                    approval.Action == UpdateApprovalAction.Install)
+                {
+                    return true;
+                }
+            }
+
+            update.Approve(UpdateApprovalAction.Install, group);
+            WsusCacheService.Instance.InvalidateSnapshot();
+            return false;
         }
 
         private List<ComputerDto> ReadComputers(IUpdateServer server, string serverId)

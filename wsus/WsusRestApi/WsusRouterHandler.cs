@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Web;
@@ -36,11 +37,11 @@ namespace WsusRestApi
                 return;
             }
 
-            if (method != "GET" && method != "HEAD")
+            if (method != "GET" && method != "HEAD" && method != "POST")
             {
                 WriteJson(context, 405, ApiResponse<object>.Fail(
-                    "READ_ONLY_API",
-                    "This WSUS API is strictly read-only. Only GET, HEAD, and OPTIONS requests are permitted.",
+                    "METHOD_NOT_ALLOWED",
+                    "Only GET, HEAD, POST, and OPTIONS requests are permitted.",
                     correlationId));
                 return;
             }
@@ -73,10 +74,34 @@ namespace WsusRestApi
             catch (Exception ex)
             {
                 FileLogger.Error(string.Format("Unhandled exception during {0} {1}", method, context.Request.RawUrl), ex);
-                WriteJson(context, 500, ApiResponse<object>.Fail(
-                    "INTERNAL_SERVER_ERROR",
-                    "An unexpected error occurred while processing the WSUS request.",
-                    correlationId));
+                if (ex is UnauthorizedAccessException)
+                {
+                    WriteJson(context, 403, ApiResponse<object>.Fail(
+                        "WSUS_PERMISSION_DENIED",
+                        "The WSUS application identity does not have permission to perform this operation.",
+                        correlationId));
+                }
+                else if (ex is ArgumentException)
+                {
+                    WriteJson(context, 400, ApiResponse<object>.Fail(
+                        "INVALID_REQUEST",
+                        ex.Message,
+                        correlationId));
+                }
+                else if (ex is KeyNotFoundException)
+                {
+                    WriteJson(context, 404, ApiResponse<object>.Fail(
+                        "NOT_FOUND",
+                        ex.Message,
+                        correlationId));
+                }
+                else
+                {
+                    WriteJson(context, 500, ApiResponse<object>.Fail(
+                        "INTERNAL_SERVER_ERROR",
+                        "An unexpected error occurred while processing the WSUS request.",
+                        correlationId));
+                }
             }
         }
 
@@ -104,17 +129,142 @@ namespace WsusRestApi
                 case "updates":
                     if (segments.Length == 1) { HandleUpdates(context, correlationId); return; }
                     if (segments.Length == 2) { HandleUpdateDetail(context, itemId, correlationId); return; }
+                    if (segments.Length == 3 && string.Equals(segments[2], "approvals", StringComparison.OrdinalIgnoreCase) && context.Request.HttpMethod == "POST")
+                    {
+                        HandleApproveUpdate(context, itemId, correlationId);
+                        return;
+                    }
                     break;
                 case "groups":
+                    if (segments.Length == 1 && context.Request.HttpMethod == "POST") { HandleCreateGroup(context, correlationId); return; }
                     if (segments.Length == 1) { HandleGroups(context, correlationId); return; }
                     if (segments.Length == 2) { HandleGroupDetail(context, itemId, correlationId); return; }
+                    if (segments.Length == 3 && string.Equals(segments[2], "computers", StringComparison.OrdinalIgnoreCase) && context.Request.HttpMethod == "POST")
+                    {
+                        HandleAddComputerToGroup(context, itemId, correlationId);
+                        return;
+                    }
                     break;
                 case "sync":
+                    if (segments.Length == 1 && context.Request.HttpMethod == "POST") { HandleStartSynchronization(context, correlationId); return; }
                     if (segments.Length == 1) { HandleSync(context, correlationId); return; }
                     break;
             }
 
             WriteJson(context, 404, ApiResponse<object>.Fail("NOT_FOUND", "Endpoint not found.", correlationId));
+        }
+
+        private static void HandleCreateGroup(HttpContext context, string correlationId)
+        {
+            CreateComputerTargetGroupRequest request = ReadRequestBody<CreateComputerTargetGroupRequest>(context);
+            string name = request != null ? request.Name : null;
+            if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 256)
+            {
+                WriteJson(context, 400, ApiResponse<object>.Fail(
+                    "INVALID_REQUEST",
+                    "Group name must contain 1 to 256 characters.",
+                    correlationId));
+                return;
+            }
+
+            GroupDto group = DataService.CreateComputerTargetGroup(name.Trim());
+            WriteJson(context, 201, ApiResponse<GroupDto>.Ok(group, new ApiMeta
+            {
+                ServerId = group.ServerId,
+                GeneratedAtUtc = DateTime.UtcNow,
+                CorrelationId = correlationId
+            }));
+        }
+
+        private static void HandleAddComputerToGroup(HttpContext context, string groupId, string correlationId)
+        {
+            AddComputerToGroupRequest request = ReadRequestBody<AddComputerToGroupRequest>(context);
+            if (request == null || string.IsNullOrWhiteSpace(request.ComputerId))
+            {
+                WriteJson(context, 400, ApiResponse<object>.Fail(
+                    "INVALID_REQUEST",
+                    "computerId is required.",
+                    correlationId));
+                return;
+            }
+
+            GroupDto group = DataService.AddComputerToGroup(groupId, request.ComputerId.Trim());
+            WriteJson(context, 200, ApiResponse<GroupDto>.Ok(group, new ApiMeta
+            {
+                ServerId = group.ServerId,
+                GeneratedAtUtc = DateTime.UtcNow,
+                CorrelationId = correlationId
+            }));
+        }
+
+        private static void HandleStartSynchronization(HttpContext context, string correlationId)
+        {
+            DataService.StartSynchronization();
+            WriteJson(context, 202, ApiResponse<StartSynchronizationDto>.Ok(
+                new StartSynchronizationDto { Status = "Started" },
+                new ApiMeta
+                {
+                    ServerId = ApiConfigProvider.Instance.GetWsusSettings().ResolvedServerId,
+                    GeneratedAtUtc = DateTime.UtcNow,
+                    CorrelationId = correlationId
+                }));
+        }
+
+        private static void HandleApproveUpdate(HttpContext context, string updateId, string correlationId)
+        {
+            ApproveUpdateRequest request = ReadRequestBody<ApproveUpdateRequest>(context);
+            if (request == null || string.IsNullOrWhiteSpace(request.TargetGroupId))
+            {
+                WriteJson(context, 400, ApiResponse<object>.Fail(
+                    "INVALID_REQUEST",
+                    "targetGroupId is required.",
+                    correlationId));
+                return;
+            }
+            if (!request.RevisionNumber.HasValue || request.RevisionNumber.Value < 1)
+            {
+                WriteJson(context, 400, ApiResponse<object>.Fail(
+                    "INVALID_REQUEST",
+                    "revisionNumber must be a positive integer.",
+                    correlationId));
+                return;
+            }
+
+            bool alreadyApproved = DataService.ApproveUpdate(
+                updateId,
+                request.RevisionNumber,
+                request.TargetGroupId.Trim());
+            UpdateApprovalResultDto result = new UpdateApprovalResultDto
+            {
+                UpdateId = updateId,
+                RevisionNumber = request.RevisionNumber.GetValueOrDefault(),
+                TargetGroupId = request.TargetGroupId.Trim(),
+                AlreadyApproved = alreadyApproved
+            };
+            WriteJson(context, 200, ApiResponse<UpdateApprovalResultDto>.Ok(result, new ApiMeta
+            {
+                ServerId = ApiConfigProvider.Instance.GetWsusSettings().ResolvedServerId,
+                GeneratedAtUtc = DateTime.UtcNow,
+                CorrelationId = correlationId
+            }));
+        }
+
+        private static T ReadRequestBody<T>(HttpContext context) where T : class
+        {
+            using (StreamReader reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding))
+            {
+                string json = reader.ReadToEnd();
+                if (string.IsNullOrWhiteSpace(json))
+                    return null;
+                try
+                {
+                    return JsonHelper.Deserialize<T>(json);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    throw new ArgumentException("Request body must contain valid JSON.", ex);
+                }
+            }
         }
 
         private static void HandleHealth(HttpContext context, string correlationId)
@@ -125,7 +275,7 @@ namespace WsusRestApi
             var payload = new
             {
                 status = "Healthy",
-                readOnly = true,
+                readOnly = false,
                 serverId = settings.ResolvedServerId,
                 serverName = settings.ResolvedServerName,
                 startedAtUtc = refresher.StartedAtUtc,
@@ -403,7 +553,7 @@ namespace WsusRestApi
                 context.Response.Headers["Vary"] = "Origin";
             }
 
-            context.Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS";
+            context.Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, POST, OPTIONS";
             context.Response.Headers["Access-Control-Allow-Headers"] = "Authorization, X-Api-Key, Content-Type, X-Correlation-Id";
         }
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { canManageServers } from "@/lib/rbac";
+import { recordUserAction } from "@/lib/user-action-log";
 
 export async function GET() {
   const session = await getSession();
@@ -86,6 +87,12 @@ export async function POST(request: Request) {
       },
     });
 
+    await recordUserAction({
+      username: session.username,
+      action: "Added WSUS server",
+      target: created.name,
+      details: `Added server endpoint ${created.baseUrl}.`,
+    });
     return NextResponse.json({ server: created }, { status: 201 });
   } catch (err) {
     const message =

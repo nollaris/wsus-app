@@ -419,6 +419,15 @@ namespace WsusRestApiInstaller
                 pool.ManagedPipelineMode = (dynamic)Enum.Parse(pipelineModeType, "Integrated");
                 pool.Enable32BitAppOnWin64 = false;
                 pool.ProcessModel.IdentityType = (dynamic)Enum.Parse(identityTypeEnum, "ApplicationPoolIdentity");
+                try
+                {
+                    pool.ProcessModel.IdleTimeout = TimeSpan.Zero;
+                    pool.StartMode = 1; // AlwaysRunning
+                }
+                catch
+                {
+                    // Older IIS versions may not expose StartMode or IdleTimeout
+                }
                 dsm.CommitChanges();
                 WriteOk("AppPool '" + opts.AppPoolName + "' configured.");
             }
@@ -431,6 +440,10 @@ namespace WsusRestApiInstaller
             {
                 WriteStep("Granting WSUS write access (" + appPoolIdentity + " -> WSUS Administrators)...");
                 AddToWsusAdministratorsGroup(appPoolIdentity);
+            }
+            else
+            {
+                CheckWsusGroupMembership(appPoolIdentity, "WSUS Administrators");
             }
             if (!reportersMembershipVerified)
             {
@@ -468,6 +481,7 @@ namespace WsusRestApiInstaller
                 if (existingApp != null)
                 {
                     existingApp.ApplicationPoolName = opts.AppPoolName;
+                    try { existingApp["preloadEnabled"] = true; } catch { }
                     dynamic rootVdir = null;
                     foreach (dynamic v in existingApp.VirtualDirectories)
                     {
@@ -492,6 +506,7 @@ namespace WsusRestApiInstaller
                 {
                     dynamic newApp = targetSite.Applications.Add(opts.AppPath, opts.InstallDir);
                     newApp.ApplicationPoolName = opts.AppPoolName;
+                    try { newApp["preloadEnabled"] = true; } catch { }
                     dsm.CommitChanges();
                     WriteOk("Created IIS Application '" + opts.AppPath + "'.");
                 }
@@ -577,6 +592,26 @@ namespace WsusRestApiInstaller
         private static void AddToWsusAdministratorsGroup(string appPoolIdentity)
         {
             AddToWsusLocalGroup(appPoolIdentity, "WSUS Administrators");
+        }
+
+        private static void CheckWsusGroupMembership(string appPoolIdentity, string groupName)
+        {
+            try
+            {
+                CommandResult groupCheck = RunProcess("net.exe", "localgroup " + QuoteArg(groupName));
+                if (groupCheck.ExitCode == 0 && ContainsExactLine(groupCheck.StdOut, appPoolIdentity))
+                {
+                    WriteOk("'" + appPoolIdentity + "' is a member of '" + groupName + "'.");
+                }
+                else
+                {
+                    WriteStep("'" + appPoolIdentity + "' is not in '" + groupName + "' (read-only mode; pass --enable-write-operations if write access is needed).");
+                }
+            }
+            catch
+            {
+                // Non-fatal check
+            }
         }
 
         private static bool AddToWsusLocalGroup(string appPoolIdentity, string groupName)

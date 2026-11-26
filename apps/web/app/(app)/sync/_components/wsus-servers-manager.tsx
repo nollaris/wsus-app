@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { canManageServers } from "@/lib/rbac";
 import {
+  AlertTriangle,
   CheckCircle2,
   Clock3,
   Loader2,
@@ -170,7 +171,8 @@ export function WsusServersManager({
     (server) => server.enabled && server.lastStatus === "Success",
   ).length;
   const failedCount = servers.filter(
-    (server) => server.lastStatus === "Failed",
+    (server) =>
+      server.lastStatus === "Failed" || server.lastStatus === "Partial",
   ).length;
 
   const stats = [
@@ -378,47 +380,62 @@ export function WsusServersManager({
                         <span className="break-all">{srv.baseUrl}</span>
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant={
-                            !srv.enabled
-                              ? "outline"
-                              : srv.lastStatus === "Failed"
-                                ? "destructive"
-                                : srv.lastStatus === "Success"
-                                  ? "secondary"
-                                  : "outline"
-                          }
-                          className={
-                            !srv.enabled
-                              ? ""
-                              : srv.lastStatus === "Syncing"
-                                ? "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
-                                : srv.lastStatus === "Success"
-                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                                  : ""
-                          }
-                        >
-                          {!srv.enabled ? (
-                            <Server />
-                          ) : srv.lastStatus === "Syncing" ? (
-                            <Loader2 className="animate-spin" />
-                          ) : srv.lastStatus === "Success" ? (
-                            <CheckCircle2 />
-                          ) : srv.lastStatus === "Failed" ? (
-                            <XCircle />
-                          ) : (
-                            <Clock3 />
-                          )}
-                          {!srv.enabled
-                            ? "Disabled"
-                            : srv.lastStatus === "Syncing"
-                              ? "Syncing"
-                              : srv.lastStatus === "Success"
-                                ? "Healthy"
+                        <div className="space-y-1">
+                          <Badge
+                            variant={
+                              !srv.enabled
+                                ? "outline"
                                 : srv.lastStatus === "Failed"
-                                  ? "Failed"
-                                  : (srv.lastStatus ?? "Not synced")}
-                        </Badge>
+                                  ? "destructive"
+                                  : srv.lastStatus === "Success"
+                                    ? "secondary"
+                                    : "outline"
+                            }
+                            className={
+                              !srv.enabled
+                                ? ""
+                                : srv.lastStatus === "Syncing"
+                                  ? "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                                  : srv.lastStatus === "Success"
+                                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                    : srv.lastStatus === "Partial"
+                                      ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                                      : ""
+                            }
+                          >
+                            {!srv.enabled ? (
+                              <Server />
+                            ) : srv.lastStatus === "Syncing" ? (
+                              <Loader2 className="animate-spin" />
+                            ) : srv.lastStatus === "Success" ? (
+                              <CheckCircle2 />
+                            ) : srv.lastStatus === "Partial" ? (
+                              <AlertTriangle />
+                            ) : srv.lastStatus === "Failed" ? (
+                              <XCircle />
+                            ) : (
+                              <Clock3 />
+                            )}
+                            {!srv.enabled
+                              ? "Disabled"
+                              : srv.lastStatus === "Syncing"
+                                ? "Syncing"
+                                : srv.lastStatus === "Success"
+                                  ? "Healthy"
+                                  : srv.lastStatus === "Partial"
+                                    ? "Partial"
+                                    : srv.lastStatus === "Failed"
+                                      ? "Failed"
+                                      : (srv.lastStatus ?? "Not synced")}
+                          </Badge>
+                          {(srv.lastStatus === "Failed" ||
+                            srv.lastStatus === "Partial") &&
+                            srv.lastError && (
+                              <p className="max-w-xs truncate text-xs text-muted-foreground" title={srv.lastError}>
+                                {srv.lastError}
+                              </p>
+                            )}
+                        </div>
                       </TableCell>
                       <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
                         {formatTimestamp(srv.lastSyncedAt)}

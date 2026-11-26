@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { canControlWsus } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { recordUserAction } from "@/lib/user-action-log";
 import {
   callWsusApi,
   type WsusGroupDetail,
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
 
   const server = await prisma.wsusServer.findUnique({
     where: { id: serverId },
-    select: { id: true, enabled: true, baseUrl: true, apiKey: true },
+    select: { id: true, name: true, enabled: true, baseUrl: true, apiKey: true },
   });
   if (!server) {
     return NextResponse.json({ error: "WSUS server not found." }, { status: 404 });
@@ -126,6 +127,12 @@ export async function POST(request: Request) {
         scheduledAt,
         createdBy: session.username,
       },
+    });
+    await recordUserAction({
+      username: session.username,
+      action: "Scheduled WSUS approval",
+      target: server.name,
+      details: `${schedule.updateTitle} for ${schedule.targetGroupName} at ${scheduledAt.toISOString()}.`,
     });
     return NextResponse.json({ schedule }, { status: 201 });
   } catch (error) {

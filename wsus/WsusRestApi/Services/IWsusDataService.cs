@@ -25,6 +25,7 @@ namespace WsusRestApi.Services
     {
         WsusLocalSnapshot FetchLocalSnapshot();
         ComputerDetailDto FetchComputerDetail(string computerId);
+        List<ClientPatchRecordDto> FetchAllClientPatches(bool includeInstalled);
         UpdateDetailDto FetchUpdateDetail(string updateId, int? revisionNumber = null);
         GroupDetailDto FetchGroupDetail(string groupId);
         GroupDto CreateComputerTargetGroup(string name);

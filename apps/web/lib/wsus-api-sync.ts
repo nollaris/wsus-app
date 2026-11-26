@@ -11,7 +11,9 @@ export const SYNC_SCOPES = [
 ] as const;
 export type SyncScope = (typeof SYNC_SCOPES)[number];
 
-const WSUS_REQUEST_INTERVAL_MS = 250;
+const DEFAULT_MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 500;
+const RETRY_MAX_DELAY_MS = 10000;
 
 export interface SyncLimits {
   /** Maximum number of computers to fetch from /computers (0 or undefined = unlimited) */
@@ -69,7 +71,7 @@ export function resolveSyncLimits(limits?: SyncLimits): ResolvedSyncLimits {
       limits?.maxClientDetailComputers ?? envInt("WSUS_SYNC_MAX_CLIENT_DETAILS")
     ),
     pageSize: clampInt(limits?.pageSize ?? envInt("WSUS_SYNC_PAGE_SIZE"), 1, 500, 500),
-    concurrency: clampInt(limits?.concurrency ?? envInt("WSUS_SYNC_CONCURRENCY"), 1, 16, 4),
+    concurrency: clampInt(limits?.concurrency ?? envInt("WSUS_SYNC_CONCURRENCY"), 1, 16, 3),
     requestTimeoutMs: clampInt(
       limits?.requestTimeoutMs ?? envInt("WSUS_SYNC_TIMEOUT_MS"),
       1000,
@@ -77,7 +79,7 @@ export function resolveSyncLimits(limits?: SyncLimits): ResolvedSyncLimits {
       120000
     ),
     approvedUpdatesOnly: Boolean(limits?.approvedUpdatesOnly),
-    skipInstalledClientPatches: Boolean(limits?.skipInstalledClientPatches),
+    skipInstalledClientPatches: limits?.skipInstalledClientPatches ?? true,
   };
 }
 
@@ -108,16 +110,128 @@ export function isValidSyncScope(value: unknown): value is SyncScope {
 
 const globalForSync = globalThis as unknown as {
   activeWsusSyncs?: Map<number, AbortController>;
-  wsusRequestNextAllowedAt?: Map<string, number>;
+  wsusLimiters?: Map<string, AdaptiveConcurrencyLimiter>;
 };
 const activeWsusSyncs =
   globalForSync.activeWsusSyncs instanceof Map
     ? globalForSync.activeWsusSyncs
     : (globalForSync.activeWsusSyncs = new Map<number, AbortController>());
-const wsusRequestNextAllowedAt =
-  globalForSync.wsusRequestNextAllowedAt instanceof Map
-    ? globalForSync.wsusRequestNextAllowedAt
-    : (globalForSync.wsusRequestNextAllowedAt = new Map<string, number>());
+const wsusLimiters =
+  globalForSync.wsusLimiters instanceof Map
+    ? globalForSync.wsusLimiters
+    : (globalForSync.wsusLimiters = new Map<string, AdaptiveConcurrencyLimiter>());
+
+export class WsusApiError extends Error {
+  readonly status?: number;
+  readonly code?: string;
+  readonly retryable: boolean;
+  readonly retryAfterMs?: number;
+
+  constructor(
+    message: string,
+    options?: {
+      status?: number;
+      code?: string;
+      retryable?: boolean;
+      retryAfterMs?: number;
+    }
+  ) {
+    super(message);
+    this.name = "WsusApiError";
+    this.status = options?.status;
+    this.code = options?.code;
+    this.retryable = Boolean(options?.retryable);
+    this.retryAfterMs = options?.retryAfterMs;
+  }
+}
+
+class AdaptiveConcurrencyLimiter {
+  private maxLimit: number;
+  private currentLimit: number;
+  private inFlight = 0;
+  private consecutiveSuccesses = 0;
+  private waiters: Array<() => void> = [];
+
+  constructor(maxLimit: number) {
+    this.maxLimit = Math.max(1, maxLimit);
+    this.currentLimit = this.maxLimit;
+  }
+
+  setMaxLimit(maxLimit: number) {
+    this.maxLimit = Math.max(1, maxLimit);
+    if (this.currentLimit > this.maxLimit) {
+      this.currentLimit = this.maxLimit;
+    }
+  }
+
+  async acquire(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) {
+      throw new DOMException("Sync cancelled by user", "AbortError");
+    }
+    if (this.inFlight < this.currentLimit) {
+      this.inFlight++;
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        const idx = this.waiters.indexOf(wake);
+        if (idx >= 0) this.waiters.splice(idx, 1);
+        reject(new DOMException("Sync cancelled by user", "AbortError"));
+      };
+      const wake = () => {
+        signal?.removeEventListener("abort", onAbort);
+        this.inFlight++;
+        resolve();
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.waiters.push(wake);
+    });
+  }
+
+  release() {
+    this.inFlight = Math.max(0, this.inFlight - 1);
+    this.drainWaiters();
+  }
+
+  recordSuccess() {
+    this.consecutiveSuccesses++;
+    if (
+      this.currentLimit < this.maxLimit &&
+      this.consecutiveSuccesses >= this.currentLimit
+    ) {
+      this.currentLimit++;
+      this.consecutiveSuccesses = 0;
+      this.drainWaiters();
+    }
+  }
+
+  recordBackpressure() {
+    this.consecutiveSuccesses = 0;
+    if (this.currentLimit > 1) {
+      this.currentLimit = Math.max(1, Math.floor(this.currentLimit / 2));
+    }
+  }
+
+  private drainWaiters() {
+    while (this.inFlight < this.currentLimit && this.waiters.length > 0) {
+      const next = this.waiters.shift();
+      next?.();
+    }
+  }
+}
+
+function getServerLimiter(baseUrl: string, maxConcurrency = 3): AdaptiveConcurrencyLimiter {
+  const key = normalizeBaseUrl(baseUrl);
+  let limiter = wsusLimiters.get(key);
+  if (!limiter) {
+    limiter = new AdaptiveConcurrencyLimiter(maxConcurrency);
+    wsusLimiters.set(key, limiter);
+  } else {
+    limiter.setMaxLimit(maxConcurrency);
+  }
+  return limiter;
+}
 
 interface WsusApiEnvelope<T> {
   success: boolean;
@@ -202,71 +316,233 @@ interface RemoteComputerDetail {
   installedUpdates?: RemoteComputerUpdateStatus[];
 }
 
+interface RemoteBulkClientPatch {
+  computerId: string;
+  fullDomainName: string;
+  ipAddress?: string | null;
+  updateId: string;
+  revisionNumber: number;
+  title: string;
+  kbArticle?: string | null;
+  classification?: string | null;
+  installationState: string;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface FailedComputerInfo {
+  computerId: string;
+  fullDomainName: string;
+  error: string;
+}
+
+export function formatPartialSyncMessage(
+  failedComputers: FailedComputerInfo[],
+  totalCount: number
+): string {
+  const sample = failedComputers
+    .slice(0, 3)
+    .map((f) => `${f.fullDomainName} (${f.error})`)
+    .join("; ");
+  const more =
+    failedComputers.length > 3 ? ` +${failedComputers.length - 3} more` : "";
+  return `Partial sync: failed ${failedComputers.length}/${totalCount} computers (${sample}${more})`;
+}
+
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, "");
 }
 
-async function waitForWsusRequestSlot(
-  baseUrl: string,
-  signal?: AbortSignal
-): Promise<void> {
-  if (signal?.aborted) {
-    throw new DOMException("Sync cancelled by user", "AbortError");
+function parseRetryAfterMs(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header.trim());
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(seconds * 1000, RETRY_MAX_DELAY_MS * 3);
   }
-
-  const key = normalizeBaseUrl(baseUrl);
-  const now = Date.now();
-  const scheduledAt = Math.max(now, wsusRequestNextAllowedAt.get(key) ?? now);
-  wsusRequestNextAllowedAt.set(key, scheduledAt + WSUS_REQUEST_INTERVAL_MS);
-  await sleep(scheduledAt - now, signal);
+  const dateMs = Date.parse(header);
+  if (Number.isFinite(dateMs)) {
+    return Math.max(0, Math.min(dateMs - Date.now(), RETRY_MAX_DELAY_MS * 3));
+  }
+  return undefined;
 }
 
-async function fetchFromWsus<T>(
+export function isRetryableWsusStatus(status: number, code?: string): boolean {
+  if (status === 401 || status === 404 || status === 400 || status === 405) {
+    return false;
+  }
+  if (status === 403) {
+    return code === "WSUS_PERMISSION_DENIED";
+  }
+  return status === 429 || status >= 500;
+}
+
+export function computeRetryDelayMs(attempt: number, retryAfterMs?: number): number {
+  const exponential = Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * Math.pow(2, attempt));
+  const jitter = Math.floor(Math.random() * 300);
+  const computed = exponential + jitter;
+  return retryAfterMs !== undefined ? Math.max(retryAfterMs, computed) : computed;
+}
+
+async function fetchFromWsusOnce<T>(
+  server: { baseUrl: string; apiKey: string },
+  path: string,
+  timeoutMs: number,
+  signal: AbortSignal | undefined,
+  maxConcurrency: number
+): Promise<WsusApiEnvelope<T>> {
+  const limiter = getServerLimiter(server.baseUrl, maxConcurrency);
+  await limiter.acquire(signal);
+
+  try {
+    const url = `${normalizeBaseUrl(server.baseUrl)}${path}`;
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "X-Api-Key": server.apiKey,
+    };
+
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const combinedSignal = signal
+      ? AbortSignal.any([timeoutSignal, signal])
+      : timeoutSignal;
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "GET",
+        headers,
+        cache: "no-store",
+        signal: combinedSignal,
+      });
+    } catch (err) {
+      if (signal?.aborted) {
+        throw new DOMException("Sync cancelled by user", "AbortError");
+      }
+      limiter.recordBackpressure();
+      const message = err instanceof Error ? err.message : "Network request failed";
+      throw new WsusApiError(message, { retryable: true });
+    }
+
+    const retryAfterMs = parseRetryAfterMs(res.headers.get("Retry-After"));
+    const json = (await res.json().catch(() => null)) as WsusApiEnvelope<T> | null;
+    if (!res.ok || !json?.success) {
+      const code = json?.error?.code;
+      const retryable = isRetryableWsusStatus(res.status, code);
+      if (retryable) {
+        limiter.recordBackpressure();
+      }
+      throw new WsusApiError(
+        json?.error?.message ?? `WSUS API returned HTTP ${res.status}`,
+        {
+          status: res.status,
+          code,
+          retryable,
+          retryAfterMs,
+        }
+      );
+    }
+
+    limiter.recordSuccess();
+    return json;
+  } finally {
+    limiter.release();
+  }
+}
+
+export async function fetchFromWsus<T>(
   server: { baseUrl: string; apiKey: string },
   path: string,
   timeoutMs = 120000,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: { maxRetries?: number; maxConcurrency?: number }
 ): Promise<WsusApiEnvelope<T>> {
-  await waitForWsusRequestSlot(server.baseUrl, signal);
+  const maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const maxConcurrency = options?.maxConcurrency ?? 3;
+  let lastError: unknown;
 
-  const url = `${normalizeBaseUrl(server.baseUrl)}${path}`;
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "X-Api-Key": server.apiKey,
-  };
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (signal?.aborted) {
+      throw new DOMException("Sync cancelled by user", "AbortError");
+    }
 
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const combinedSignal = signal
-    ? AbortSignal.any([timeoutSignal, signal])
-    : timeoutSignal;
+    try {
+      return await fetchFromWsusOnce<T>(server, path, timeoutMs, signal, maxConcurrency);
+    } catch (err) {
+      lastError = err;
+      if (signal?.aborted || (err instanceof Error && err.name === "AbortError")) {
+        throw err;
+      }
 
-  const res = await fetch(url, {
-    method: "GET",
-    headers,
-    cache: "no-store",
-    signal: combinedSignal,
-  });
+      const isWsusError = err instanceof WsusApiError;
+      const retryable = isWsusError ? err.retryable : true;
+      if (!retryable || attempt >= maxRetries) {
+        throw err;
+      }
 
-  const json = (await res.json().catch(() => null)) as WsusApiEnvelope<T> | null;
-  if (!res.ok || !json?.success) {
-    throw new Error(
-      json?.error?.message ?? `WSUS API returned HTTP ${res.status}`
-    );
+      const delayMs = computeRetryDelayMs(attempt, isWsusError ? err.retryAfterMs : undefined);
+      await sleep(delayMs, signal);
+    }
   }
-  return json;
+
+  throw lastError;
 }
 
 export async function testWsusServerConnection(server: {
   baseUrl: string;
   apiKey: string;
 }) {
-  const res = await fetchFromWsus<{
+  let healthData: {
     status: string;
     serverId?: string;
     serverName?: string;
     cacheDurationMinutes?: number;
-  }>(server, "/health", 15000);
-  return res.data;
+    snapshotReady?: boolean;
+    warming?: boolean;
+    lastError?: string | null;
+  };
+
+  try {
+    const healthRes = await fetchFromWsus<typeof healthData>(
+      server,
+      "/health",
+      15000,
+      undefined,
+      { maxRetries: 1, maxConcurrency: 1 }
+    );
+    healthData = healthRes.data;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Connection failed";
+    throw new Error(`Cannot reach WSUS API /health: ${detail}`);
+  }
+
+  try {
+    await fetchFromWsus<unknown>(
+      server,
+      "/summary",
+      30000,
+      undefined,
+      { maxRetries: 1, maxConcurrency: 1 }
+    );
+  } catch (err) {
+    if (err instanceof WsusApiError) {
+      if (err.status === 401) {
+        throw new Error("Authentication failed (HTTP 401): Invalid X-Api-Key.");
+      }
+      if (err.status === 403) {
+        throw new Error(
+          `WSUS permission denied (HTTP 403): ${err.message} Check that the IIS AppPool identity is a member of WSUS Reporters / Administrators.`
+        );
+      }
+      if (err.status === 502 || err.status === 503) {
+        throw new Error(
+          `WSUS API is reachable, but WSUS snapshot is not ready (HTTP ${err.status}): ${err.message}`
+        );
+      }
+    }
+    const detail = err instanceof Error ? err.message : "Summary check failed";
+    throw new Error(`WSUS API /health OK, but /summary check failed: ${detail}`);
+  }
+
+  return healthData;
 }
 
 async function mapWithConcurrency<T, R>(
@@ -315,7 +591,8 @@ async function fetchAllPages<T>(
     server,
     `${resourcePath}${sep}page=1&pageSize=${effectivePageSize}`,
     options.timeoutMs,
-    options.signal
+    options.signal,
+    { maxConcurrency: options.concurrency }
   );
 
   const items: T[] = [...firstRes.data];
@@ -346,7 +623,8 @@ async function fetchAllPages<T>(
         server,
         `${resourcePath}${sep}page=${page}&pageSize=${effectivePageSize}`,
         options.timeoutMs,
-        options.signal
+        options.signal,
+        { maxConcurrency: options.concurrency }
       );
       return res.data;
     },
@@ -359,7 +637,13 @@ async function fetchAllPages<T>(
   return options.maxItems !== null ? items.slice(0, options.maxItems) : items;
 }
 
-async function fetchComputerDetailsInBatches(
+export interface ComputerDetailBatchResult {
+  details: RemoteComputerDetail[];
+  failedComputers: FailedComputerInfo[];
+  totalCount: number;
+}
+
+export async function fetchComputerDetailsInBatches(
   server: { baseUrl: string; apiKey: string },
   computers: RemoteComputer[],
   options: {
@@ -369,14 +653,17 @@ async function fetchComputerDetailsInBatches(
     includeInstalled: boolean;
     signal?: AbortSignal;
   }
-): Promise<RemoteComputerDetail[]> {
+): Promise<ComputerDetailBatchResult> {
   const targetComputers =
     options.maxComputers !== null
       ? computers.slice(0, options.maxComputers)
       : computers;
   const query = options.includeInstalled ? "" : "?includeInstalled=false";
 
-  const results = await mapWithConcurrency(
+  const details: RemoteComputerDetail[] = [];
+  const failedComputers: FailedComputerInfo[] = [];
+
+  await mapWithConcurrency(
     targetComputers,
     options.concurrency,
     async (c) => {
@@ -388,20 +675,70 @@ async function fetchComputerDetailsInBatches(
           server,
           `/computers/${encodeURIComponent(c.computerId)}${query}`,
           options.timeoutMs,
-          options.signal
+          options.signal,
+          { maxConcurrency: options.concurrency }
         );
-        return res.data;
+        details.push(res.data);
       } catch (err) {
         if (options.signal?.aborted || (err instanceof Error && err.name === "AbortError")) {
           throw err;
         }
-        return null;
+        failedComputers.push({
+          computerId: c.computerId,
+          fullDomainName: c.fullDomainName,
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
       }
     },
     options.signal
   );
 
-  return results.filter((item): item is RemoteComputerDetail => item !== null);
+  return {
+    details,
+    failedComputers,
+    totalCount: targetComputers.length,
+  };
+}
+
+async function fetchClientPatchesBulk(
+  server: { baseUrl: string; apiKey: string },
+  options: {
+    includeInstalled: boolean;
+    pageSize: number;
+    concurrency: number;
+    timeoutMs: number;
+    signal?: AbortSignal;
+  }
+): Promise<RemoteBulkClientPatch[] | null> {
+  const path = `/client-patches?includeInstalled=${options.includeInstalled ? "true" : "false"}`;
+  try {
+    return await fetchAllPages<RemoteBulkClientPatch>(server, path, {
+      pageSize: options.pageSize,
+      maxItems: null,
+      concurrency: options.concurrency,
+      timeoutMs: options.timeoutMs,
+      signal: options.signal,
+    });
+  } catch (err) {
+    if (err instanceof WsusApiError && err.status === 404) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+async function warmUpWsusSnapshot(
+  server: { baseUrl: string; apiKey: string },
+  timeoutMs: number,
+  signal?: AbortSignal
+): Promise<void> {
+  await fetchFromWsus<unknown>(
+    server,
+    "/summary",
+    timeoutMs,
+    signal,
+    { maxRetries: DEFAULT_MAX_RETRIES, maxConcurrency: 1 }
+  );
 }
 
 export async function syncWsusServerById(
@@ -427,8 +764,11 @@ export async function syncWsusServerById(
 
   const startedAt = Date.now();
   try {
-    const [computers, updates, syncRes] = await Promise.all([
-      syncComputers || syncClientPatches
+    // Warm up WSUS snapshot with a single /summary call before firing parallel requests
+    await warmUpWsusSnapshot(server, limits.requestTimeoutMs, signal);
+
+    const [initialComputers, updates, syncRes] = await Promise.all([
+      syncComputers
         ? fetchAllPages<RemoteComputer>(server, "/computers", {
             pageSize: limits.pageSize,
             maxItems: limits.maxComputers,
@@ -451,24 +791,65 @@ export async function syncWsusServerById(
             server,
             "/sync?limit=50",
             limits.requestTimeoutMs,
-            signal
+            signal,
+            { maxConcurrency: limits.concurrency }
           )
         : Promise.resolve(null),
     ]);
+    let computers = initialComputers;
 
     if (signal?.aborted) {
       throw new DOMException("Sync cancelled by user", "AbortError");
     }
 
-    const computerDetails = syncClientPatches
-      ? await fetchComputerDetailsInBatches(server, computers, {
+    let bulkClientPatches: RemoteBulkClientPatch[] | null = null;
+    let computerDetailsResult: ComputerDetailBatchResult = {
+      details: [],
+      failedComputers: [],
+      totalCount: 0,
+    };
+
+    if (syncClientPatches) {
+      if (limits.maxClientDetailComputers === null) {
+        bulkClientPatches = await fetchClientPatchesBulk(server, {
+          includeInstalled: !limits.skipInstalledClientPatches,
+          pageSize: limits.pageSize,
+          concurrency: limits.concurrency,
+          timeoutMs: limits.requestTimeoutMs,
+          signal,
+        });
+      }
+
+      if (bulkClientPatches === null) {
+        if (!syncComputers && computers.length === 0) {
+          computers = await fetchAllPages<RemoteComputer>(server, "/computers", {
+            pageSize: limits.pageSize,
+            maxItems: limits.maxComputers,
+            concurrency: limits.concurrency,
+            timeoutMs: limits.requestTimeoutMs,
+            signal,
+          });
+        }
+
+        computerDetailsResult = await fetchComputerDetailsInBatches(server, computers, {
           maxComputers: limits.maxClientDetailComputers,
           concurrency: limits.concurrency,
           timeoutMs: limits.requestTimeoutMs,
           includeInstalled: !limits.skipInstalledClientPatches,
           signal,
-        })
-      : [];
+        });
+
+        if (
+          computerDetailsResult.totalCount > 0 &&
+          computerDetailsResult.details.length === 0
+        ) {
+          const sampleErr = computerDetailsResult.failedComputers[0]?.error ?? "Unknown error";
+          throw new Error(
+            `All ${computerDetailsResult.totalCount} computer detail requests failed (e.g. ${sampleErr})`
+          );
+        }
+      }
+    }
 
     if (signal?.aborted) {
       throw new DOMException("Sync cancelled by user", "AbortError");
@@ -520,34 +901,65 @@ export async function syncWsusServerById(
     }> = [];
 
     const serverName = server.name;
+    const succeededComputerIds: string[] = [];
 
-    for (const detail of computerDetails) {
-      const comp = detail.computer;
-      const allUpdates = [
-        ...(detail.failedUpdates ?? []),
-        ...(detail.neededUpdates ?? []),
-        ...(detail.pendingRebootUpdates ?? []),
-        ...(limits.skipInstalledClientPatches ? [] : (detail.installedUpdates ?? [])),
-      ];
-      for (const upd of allUpdates) {
+    if (bulkClientPatches !== null) {
+      for (const row of bulkClientPatches) {
+        if (
+          limits.skipInstalledClientPatches &&
+          row.installationState === "Installed"
+        ) {
+          continue;
+        }
         clientPatchRows.push({
           serverName,
-          computerName: comp.fullDomainName,
-          computerTargetId: comp.computerId,
-          ipAddress: comp.ipAddress ?? "",
-          updateId: upd.updateId,
-          revisionNumber: upd.revisionNumber,
-          updateTitle: upd.title,
-          kbArticle: upd.kbArticle ?? null,
-          classification: upd.classification ?? "Other",
-          installationState: upd.installationState,
+          computerName: row.fullDomainName,
+          computerTargetId: row.computerId,
+          ipAddress: row.ipAddress ?? "",
+          updateId: row.updateId,
+          revisionNumber: row.revisionNumber,
+          updateTitle: row.title,
+          kbArticle: row.kbArticle ?? null,
+          classification: row.classification ?? "Other",
+          installationState: row.installationState,
           approvalAction:
-            updateApprovalMap.get(`${upd.updateId}:${upd.revisionNumber}`) ??
+            updateApprovalMap.get(`${row.updateId}:${row.revisionNumber}`) ??
             "Unknown",
           approvalTargetGroupId: "",
-          errorCode: upd.errorCode ?? null,
-          errorMessage: upd.errorMessage ?? null,
+          errorCode: row.errorCode ?? null,
+          errorMessage: row.errorMessage ?? null,
         });
+      }
+    } else {
+      for (const detail of computerDetailsResult.details) {
+        const comp = detail.computer;
+        succeededComputerIds.push(comp.computerId);
+        const allUpdates = [
+          ...(detail.failedUpdates ?? []),
+          ...(detail.neededUpdates ?? []),
+          ...(detail.pendingRebootUpdates ?? []),
+          ...(limits.skipInstalledClientPatches ? [] : (detail.installedUpdates ?? [])),
+        ];
+        for (const upd of allUpdates) {
+          clientPatchRows.push({
+            serverName,
+            computerName: comp.fullDomainName,
+            computerTargetId: comp.computerId,
+            ipAddress: comp.ipAddress ?? "",
+            updateId: upd.updateId,
+            revisionNumber: upd.revisionNumber,
+            updateTitle: upd.title,
+            kbArticle: upd.kbArticle ?? null,
+            classification: upd.classification ?? "Other",
+            installationState: upd.installationState,
+            approvalAction:
+              updateApprovalMap.get(`${upd.updateId}:${upd.revisionNumber}`) ??
+              "Unknown",
+            approvalTargetGroupId: "",
+            errorCode: upd.errorCode ?? null,
+            errorMessage: upd.errorMessage ?? null,
+          });
+        }
       }
     }
 
@@ -699,9 +1111,24 @@ export async function syncWsusServerById(
         }
       }
 
-      // 4. Replace ClientPatchStatus for this server (in chunks to avoid parameter limits)
+      // 4. Replace ClientPatchStatus for this server (preserve failed computers on partial sync)
       if (syncClientPatches) {
-        await tx.clientPatchStatus.deleteMany({ where: { serverName } });
+        if (bulkClientPatches !== null || computerDetailsResult.failedComputers.length === 0) {
+          await tx.clientPatchStatus.deleteMany({ where: { serverName } });
+        } else if (succeededComputerIds.length > 0) {
+          const deleteChunkSize = 1000;
+          for (let i = 0; i < succeededComputerIds.length; i += deleteChunkSize) {
+            await tx.clientPatchStatus.deleteMany({
+              where: {
+                serverName,
+                computerTargetId: {
+                  in: succeededComputerIds.slice(i, i + deleteChunkSize),
+                },
+              },
+            });
+          }
+        }
+
         const chunkSize = 2500;
         for (let i = 0; i < clientPatchRows.length; i += chunkSize) {
           await tx.clientPatchStatus.createMany({
@@ -737,12 +1164,24 @@ export async function syncWsusServerById(
       { maxWait: 10000, timeout: 120000 }
     );
 
+    const hasPartialFailures =
+      syncClientPatches &&
+      bulkClientPatches === null &&
+      computerDetailsResult.failedComputers.length > 0;
+
+    const partialMessage = hasPartialFailures
+      ? formatPartialSyncMessage(
+          computerDetailsResult.failedComputers,
+          computerDetailsResult.totalCount
+        )
+      : null;
+
     await prisma.wsusServer.update({
       where: { id: server.id },
       data: {
         lastSyncedAt: new Date(),
-        lastStatus: "Success",
-        lastError: null,
+        lastStatus: hasPartialFailures ? "Partial" : "Success",
+        lastError: partialMessage,
       },
     });
 
@@ -753,6 +1192,7 @@ export async function syncWsusServerById(
       computersCount: computers.length,
       updatesCount: updates.length,
       syncHistoryCount: syncRes?.data.history?.length ?? 0,
+      failedComputersCount: computerDetailsResult.failedComputers.length,
       durationMs: Date.now() - startedAt,
     };
   } catch (err) {

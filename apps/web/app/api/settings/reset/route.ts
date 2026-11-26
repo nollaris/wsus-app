@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { canResetDatabase } from "@/lib/rbac";
+import { recordUserAction } from "@/lib/user-action-log";
 
 async function getTableCounts() {
   const [
@@ -69,6 +70,12 @@ export async function POST(request: Request) {
         prisma.classification.deleteMany(),
       ]);
 
+      await recordUserAction({
+        username: session.username,
+        action: "Reset WSUS data",
+        target: "Portal database",
+        details: "Cleared imported WSUS data and synchronization history.",
+      });
       return NextResponse.json({
         ok: true,
         action: "truncate",

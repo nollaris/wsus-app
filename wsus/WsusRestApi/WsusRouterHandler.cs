@@ -76,9 +76,10 @@ namespace WsusRestApi
                 FileLogger.Error(string.Format("Unhandled exception during {0} {1}", method, context.Request.RawUrl), ex);
                 if (ex is UnauthorizedAccessException)
                 {
+                    context.Response.Headers["Retry-After"] = "3";
                     WriteJson(context, 403, ApiResponse<object>.Fail(
                         "WSUS_PERMISSION_DENIED",
-                        "The WSUS application identity does not have permission to perform this operation.",
+                        "The WSUS application identity does not have permission to perform this operation (or SDK initialization failed transiently).",
                         correlationId));
                 }
                 else if (ex is ArgumentException)
@@ -125,6 +126,9 @@ namespace WsusRestApi
                 case "computers":
                     if (segments.Length == 1) { HandleComputers(context, correlationId); return; }
                     if (segments.Length == 2) { HandleComputerDetail(context, itemId, correlationId); return; }
+                    break;
+                case "client-patches":
+                    if (segments.Length == 1) { HandleClientPatches(context, correlationId); return; }
                     break;
                 case "updates":
                     if (segments.Length == 1) { HandleUpdates(context, correlationId); return; }
@@ -281,6 +285,8 @@ namespace WsusRestApi
                 startedAtUtc = refresher.StartedAtUtc,
                 uptimeSeconds = Math.Round((DateTime.UtcNow - refresher.StartedAtUtc).TotalSeconds, 0),
                 cacheDurationMinutes = Cache.CacheDuration.TotalMinutes,
+                snapshotReady = Cache.IsSnapshotReady,
+                warming = Cache.IsWarming,
                 lastRefreshCycleCompletedUtc = refresher.LastCycleCompletedUtc,
                 lastError = Cache.LastError
             };
@@ -372,6 +378,20 @@ namespace WsusRestApi
             }
 
             WriteJson(context, 200, ApiResponse<ComputerDetailDto>.Ok(payload, BuildMeta(serverId, cached, correlationId)));
+        }
+
+        private static void HandleClientPatches(HttpContext context, string correlationId)
+        {
+            string serverId = ApiConfigProvider.Instance.GetWsusSettings().ResolvedServerId;
+            NameValueCollection q = context.Request.QueryString;
+            bool includeInstalled = ParseNullableBool(q["includeInstalled"]) ?? false;
+            int page = ParseInt(q["page"], 1);
+            int pageSize = ParseInt(q["pageSize"], 500);
+
+            CachedValue<List<ClientPatchRecordDto>> cached = Cache.GetOrRefreshClientPatches(includeInstalled, DataService);
+            PagedResult<ClientPatchRecordDto> paged = Paginate(cached.Value, page, pageSize, 2000);
+            WriteJson(context, 200, ApiResponse<IReadOnlyList<ClientPatchRecordDto>>.Ok(
+                paged.Items, BuildMeta(serverId, cached, correlationId, paged.Pagination)));
         }
 
         private static void HandleUpdates(HttpContext context, string correlationId)
@@ -495,10 +515,29 @@ namespace WsusRestApi
             {
                 Cache.RecordError(ex);
                 cached = null;
-                WriteJson(context, 502, ApiResponse<object>.Fail(
-                    "WSUS_LOCAL_ERROR",
-                    string.Format("Unable to query local WSUS service: {0}", ex.Message),
-                    correlationId));
+                if (Cache.IsWarming)
+                {
+                    context.Response.Headers["Retry-After"] = "5";
+                    WriteJson(context, 503, ApiResponse<object>.Fail(
+                        "WSUS_WARMING_UP",
+                        "WSUS snapshot is warming up. Please retry shortly.",
+                        correlationId));
+                }
+                else if (ex is UnauthorizedAccessException)
+                {
+                    context.Response.Headers["Retry-After"] = "3";
+                    WriteJson(context, 403, ApiResponse<object>.Fail(
+                        "WSUS_PERMISSION_DENIED",
+                        string.Format("WSUS permission denied: {0}", ex.Message),
+                        correlationId));
+                }
+                else
+                {
+                    WriteJson(context, 502, ApiResponse<object>.Fail(
+                        "WSUS_LOCAL_ERROR",
+                        string.Format("Unable to query local WSUS service: {0}", ex.Message),
+                        correlationId));
+                }
                 return false;
             }
         }
@@ -593,11 +632,11 @@ namespace WsusRestApi
             };
         }
 
-        private static PagedResult<T> Paginate<T>(IEnumerable<T> source, int page, int pageSize)
+        private static PagedResult<T> Paginate<T>(IEnumerable<T> source, int page, int pageSize, int maxPageSize = 500)
         {
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 50;
-            if (pageSize > 500) pageSize = 500;
+            if (pageSize > maxPageSize) pageSize = maxPageSize;
 
             IList<T> list = source as IList<T> ?? source.ToList();
             int total = list.Count;

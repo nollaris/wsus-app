@@ -32,24 +32,32 @@ namespace WsusRestApi.Services
             int maxSyncHistory = settings.MaxSyncHistoryItems > 0 ? settings.MaxSyncHistoryItems : 50;
 
             DateTime capturedAt = DateTime.UtcNow;
-            IUpdateServer server = _connectionFactory.ConnectLocal();
-
-            string version = server.Version != null ? server.Version.ToString() : "Unknown";
-            List<ComputerDto> computers = ReadComputers(server, serverId);
-            List<UpdateDto> updates = ReadUpdates(server, serverId);
-            List<GroupDto> groups = ReadGroups(server, serverId, computers);
-            SyncOverviewDto sync = ReadSyncOverview(server, serverId, serverName, maxSyncHistory);
-            ServerSummaryDto summary = BuildSummary(serverId, serverName, version, capturedAt, computers, updates, groups, sync);
-
-            return new WsusLocalSnapshot
+            try
             {
-                Summary = summary,
-                Computers = computers,
-                Updates = updates,
-                Groups = groups,
-                Sync = sync,
-                CapturedAtUtc = capturedAt
-            };
+                IUpdateServer server = _connectionFactory.ConnectLocal();
+
+                string version = server.Version != null ? server.Version.ToString() : "Unknown";
+                List<ComputerDto> computers = ReadComputers(server, serverId);
+                List<UpdateDto> updates = ReadUpdates(server, serverId);
+                List<GroupDto> groups = ReadGroups(server, serverId, computers);
+                SyncOverviewDto sync = ReadSyncOverview(server, serverId, serverName, maxSyncHistory);
+                ServerSummaryDto summary = BuildSummary(serverId, serverName, version, capturedAt, computers, updates, groups, sync);
+
+                return new WsusLocalSnapshot
+                {
+                    Summary = summary,
+                    Computers = computers,
+                    Updates = updates,
+                    Groups = groups,
+                    Sync = sync,
+                    CapturedAtUtc = capturedAt
+                };
+            }
+            catch
+            {
+                _connectionFactory.ResetConnection();
+                throw;
+            }
         }
 
         public ComputerDetailDto FetchComputerDetail(string computerId)
@@ -167,6 +175,138 @@ namespace WsusRestApi.Services
             }
 
             return detail;
+        }
+
+        private sealed class CachedUpdateMetadata
+        {
+            public string UpdateId;
+            public int RevisionNumber;
+            public string Title;
+            public string KbArticle;
+            public string Classification;
+        }
+
+        public List<ClientPatchRecordDto> FetchAllClientPatches(bool includeInstalled)
+        {
+            try
+            {
+                IUpdateServer server = _connectionFactory.ConnectLocal();
+
+                // 1. Fetch 60-day error event history once and index by "{computerId}|{updateId}"
+                Dictionary<string, IUpdateEvent> latestErrors = new Dictionary<string, IUpdateEvent>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    UpdateEventCollection events = server.GetUpdateEventHistory(DateTime.UtcNow.AddDays(-60), DateTime.UtcNow);
+                    if (events != null)
+                    {
+                        foreach (IUpdateEvent evt in events)
+                        {
+                            if (string.IsNullOrEmpty(evt.ComputerId) || evt.UpdateId == null) continue;
+                            int errCode = (int)evt.ErrorCode;
+                            if (!evt.IsError && errCode == 0) continue;
+
+                            string errKey = evt.ComputerId + "|" + evt.UpdateId.UpdateId.ToString();
+                            IUpdateEvent existingEvt;
+                            if (!latestErrors.TryGetValue(errKey, out existingEvt) ||
+                                evt.CreationDate > existingEvt.CreationDate)
+                            {
+                                latestErrors[errKey] = evt;
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore if event history is unavailable on this WSUS target
+                }
+
+                // 2. Cache update metadata by "{updateId}:{revision}" so info.GetUpdate() is called once per unique update
+                Dictionary<string, CachedUpdateMetadata> updateMetaCache = new Dictionary<string, CachedUpdateMetadata>(StringComparer.OrdinalIgnoreCase);
+                List<ClientPatchRecordDto> records = new List<ClientPatchRecordDto>();
+
+                UpdateScope scope = new UpdateScope();
+                scope.IncludedInstallationStates = UpdateInstallationStates.Failed
+                    | UpdateInstallationStates.InstalledPendingReboot
+                    | UpdateInstallationStates.Downloaded
+                    | UpdateInstallationStates.NotInstalled;
+                if (includeInstalled)
+                {
+                    scope.IncludedInstallationStates |= UpdateInstallationStates.Installed;
+                }
+
+                foreach (IComputerTarget target in server.GetComputerTargets())
+                {
+                    string compId = target.Id;
+                    string compName = target.FullDomainName;
+                    string compIp = target.IPAddress != null ? target.IPAddress.ToString() : string.Empty;
+
+                    UpdateInstallationInfoCollection installInfos = target.GetUpdateInstallationInfoPerUpdate(scope);
+                    foreach (IUpdateInstallationInfo info in installInfos)
+                    {
+                        UpdateInstallationState state = info.UpdateInstallationState;
+                        bool keep = false;
+                        switch (state)
+                        {
+                            case UpdateInstallationState.Failed:
+                            case UpdateInstallationState.InstalledPendingReboot:
+                            case UpdateInstallationState.Downloaded:
+                            case UpdateInstallationState.NotInstalled:
+                                keep = true;
+                                break;
+                            case UpdateInstallationState.Installed:
+                                keep = includeInstalled;
+                                break;
+                        }
+                        if (!keep) continue;
+
+                        string updKey = info.UpdateId.ToString();
+                        CachedUpdateMetadata meta;
+                        if (!updateMetaCache.TryGetValue(updKey, out meta))
+                        {
+                            IUpdate update = info.GetUpdate();
+                            if (update == null) continue;
+                            meta = new CachedUpdateMetadata
+                            {
+                                UpdateId = update.Id.UpdateId.ToString(),
+                                RevisionNumber = update.Id.RevisionNumber,
+                                Title = update.Title,
+                                KbArticle = ExtractPrimaryKb(update),
+                                Classification = update.UpdateClassificationTitle ?? "Other"
+                            };
+                            updateMetaCache[updKey] = meta;
+                        }
+
+                        IUpdateEvent errEvt = null;
+                        if (state == UpdateInstallationState.Failed)
+                        {
+                            latestErrors.TryGetValue(compId + "|" + meta.UpdateId, out errEvt);
+                        }
+
+                        int errHResult = errEvt != null ? (int)errEvt.ErrorCode : 0;
+                        records.Add(new ClientPatchRecordDto
+                        {
+                            ComputerId = compId,
+                            FullDomainName = compName,
+                            IpAddress = compIp,
+                            UpdateId = meta.UpdateId,
+                            RevisionNumber = meta.RevisionNumber,
+                            Title = meta.Title,
+                            KbArticle = meta.KbArticle,
+                            Classification = meta.Classification,
+                            InstallationState = state.ToString(),
+                            ErrorCode = errHResult != 0 ? ("0x" + errHResult.ToString("X8")) : null,
+                            ErrorMessage = errEvt != null ? errEvt.Message : null
+                        });
+                    }
+                }
+
+                return records;
+            }
+            catch
+            {
+                _connectionFactory.ResetConnection();
+                throw;
+            }
         }
 
         public UpdateDetailDto FetchUpdateDetail(string updateId, int? revisionNumber = null)

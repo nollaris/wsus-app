@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { canControlWsus } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { recordUserAction } from "@/lib/user-action-log";
 
 export async function DELETE(
   _request: Request,
@@ -24,6 +25,10 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid schedule ID." }, { status: 400 });
   }
 
+  const schedule = await prisma.wsusApprovalSchedule.findUnique({
+    where: { id: scheduleId },
+    include: { server: { select: { name: true } } },
+  });
   const result = await prisma.wsusApprovalSchedule.updateMany({
     where: { id: scheduleId, status: "pending" },
     data: { status: "cancelled" },
@@ -33,6 +38,14 @@ export async function DELETE(
       { error: "Schedule not found or no longer pending." },
       { status: 409 }
     );
+  }
+  if (schedule) {
+    await recordUserAction({
+      username: session.username,
+      action: "Cancelled scheduled WSUS approval",
+      target: schedule.server.name,
+      details: `${schedule.updateTitle} for ${schedule.targetGroupName}.`,
+    });
   }
   return NextResponse.json({ success: true });
 }

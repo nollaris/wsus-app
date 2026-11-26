@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { canManageServers } from "@/lib/rbac";
+import { recordUserAction } from "@/lib/user-action-log";
 
 export async function PATCH(
   request: Request,
@@ -77,6 +78,14 @@ export async function PATCH(
     },
   });
 
+  const updatedFields = Object.keys(data).filter((field) => field !== "apiKey");
+  if (data.apiKey) updatedFields.push("API key");
+  await recordUserAction({
+    username: session.username,
+    action: "Updated WSUS server",
+    target: updated.name,
+    details: `Updated ${updatedFields.join(", ")}.`,
+  });
   return NextResponse.json({ server: updated });
 }
 
@@ -114,6 +123,18 @@ export async function DELETE(
     );
   }
 
+  const server = await prisma.wsusServer.findUnique({
+    where: { id: serverId },
+    select: { name: true, baseUrl: true },
+  });
   await prisma.wsusServer.delete({ where: { id: serverId } });
+  if (server) {
+    await recordUserAction({
+      username: session.username,
+      action: "Deleted WSUS server",
+      target: server.name,
+      details: `Deleted server endpoint ${server.baseUrl}.`,
+    });
+  }
   return NextResponse.json({ success: true });
 }

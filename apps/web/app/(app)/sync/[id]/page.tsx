@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
+  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   Clock,
@@ -283,6 +284,14 @@ export default async function ServerControlPage({
                 >
                   <CheckCircle2 />
                   Synced
+                </Badge>
+              ) : server.lastStatus === "Partial" ? (
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                >
+                  <AlertTriangle />
+                  Partial
                 </Badge>
               ) : server.lastStatus === "Failed" ? (
                 <Badge variant="destructive">

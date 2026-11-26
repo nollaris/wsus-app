@@ -15,6 +15,18 @@ model User {
   createdAt    DateTime @default(now())
 }
 
+model UserActionLog {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  username  String
+  action    String
+  target    String
+  details   String
+
+  @@index([createdAt])
+  @@index([username, createdAt])
+}
+
 model Classification {
   serverName       String    @default("")
   classificationId String

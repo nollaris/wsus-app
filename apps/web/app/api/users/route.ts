@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { canManageUsers, isValidRole } from "@/lib/rbac";
+import { recordUserAction } from "@/lib/user-action-log";
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9._-]{3,50}$/;
 
@@ -97,6 +98,12 @@ export async function POST(request: Request) {
       },
     });
 
+    await recordUserAction({
+      username: session.username,
+      action: "Created portal user",
+      target: created.username,
+      details: `Created user with ${created.role} role.`,
+    });
     return NextResponse.json({ user: created }, { status: 201 });
   } catch (err) {
     const message =

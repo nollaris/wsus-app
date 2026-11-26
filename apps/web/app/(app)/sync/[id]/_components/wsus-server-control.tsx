@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
+  AlertTriangle,
   CheckCircle2,
   Database,
   History,
@@ -141,11 +142,11 @@ export function WsusServerControl({
   const [maxComputers, setMaxComputers] = React.useState("");
   const [maxUpdates, setMaxUpdates] = React.useState("");
   const [maxClientDetails, setMaxClientDetails] = React.useState("");
-  const [concurrency, setConcurrency] = React.useState("4");
+  const [concurrency, setConcurrency] = React.useState("3");
   const [requestTimeoutSec, setRequestTimeoutSec] = React.useState("120");
   const [approvedUpdatesOnly, setApprovedUpdatesOnly] = React.useState(false);
   const [skipInstalledClientPatches, setSkipInstalledClientPatches] =
-    React.useState(false);
+    React.useState(true);
   const [toggling, setToggling] = React.useState(false);
 
   const [keyDialogOpen, setKeyDialogOpen] = React.useState(false);
@@ -480,6 +481,15 @@ export function WsusServerControl({
           <XCircle className="size-4" />
           <AlertDescription>
             Last sync error: <span className="font-mono">{server.lastError}</span>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {server.lastStatus === "Partial" && server.lastError && (
+        <Alert className="border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="size-4" />
+          <AlertDescription>
+            Partial sync warning: <span className="font-mono">{server.lastError}</span>
           </AlertDescription>
         </Alert>
       )}

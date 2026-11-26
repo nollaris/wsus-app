@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { canTriggerSync } from "@/lib/rbac";
+import { recordUserAction } from "@/lib/user-action-log";
 import {
   cancelBackgroundSync,
   isValidSyncScope,
@@ -54,9 +55,33 @@ export async function POST(request: Request) {
   if (body?.action === "cancel") {
     if (requestedServerId !== null) {
       const result = await cancelBackgroundSync([requestedServerId]);
+      if (result.cancelledIds.length > 0) {
+        const servers = await prisma.wsusServer.findMany({
+          where: { id: { in: result.cancelledIds } },
+          select: { name: true },
+        });
+        await recordUserAction({
+          username: session.username,
+          action: "Cancelled portal synchronization",
+          target: servers.map((server) => server.name).join(", "),
+          details: "Cancelled a running synchronization from the portal.",
+        });
+      }
       return NextResponse.json({ success: true, ...result });
     }
     const result = await cancelBackgroundSync();
+    if (result.cancelledIds.length > 0) {
+      const servers = await prisma.wsusServer.findMany({
+        where: { id: { in: result.cancelledIds } },
+        select: { name: true },
+      });
+      await recordUserAction({
+        username: session.username,
+        action: "Cancelled portal synchronization",
+        target: servers.map((server) => server.name).join(", "),
+        details: "Cancelled running synchronizations from the portal.",
+      });
+    }
     return NextResponse.json({ success: true, ...result });
   }
   const rawScope = body?.scope;
@@ -76,7 +101,7 @@ export async function POST(request: Request) {
   if (requestedServerId !== null) {
     const server = await prisma.wsusServer.findUnique({
       where: { id: requestedServerId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!server) {
       return NextResponse.json(
@@ -86,6 +111,14 @@ export async function POST(request: Request) {
     }
 
     const result = await startBackgroundSync([server.id], scope, limits);
+    if (result.startedIds.length > 0) {
+      await recordUserAction({
+        username: session.username,
+        action: "Requested portal data import",
+        target: server.name,
+        details: `Requested portal import for scope: ${scope}.`,
+      });
+    }
     return NextResponse.json(
       { success: true, scope, ...result },
       { status: 202 }
@@ -95,7 +128,7 @@ export async function POST(request: Request) {
   const enabledServers = await prisma.wsusServer.findMany({
     where: { enabled: true },
     orderBy: { name: "asc" },
-    select: { id: true },
+    select: { id: true, name: true },
   });
 
   if (enabledServers.length === 0) {
@@ -110,6 +143,17 @@ export async function POST(request: Request) {
     scope,
     limits
   );
+  const startedServers = enabledServers.filter((server) =>
+    result.startedIds.includes(server.id)
+  );
+  if (startedServers.length > 0) {
+    await recordUserAction({
+      username: session.username,
+      action: "Requested portal data import",
+      target: startedServers.map((server) => server.name).join(", "),
+      details: `Requested portal import for scope: ${scope}.`,
+    });
+  }
   return NextResponse.json(
     { success: true, scope, ...result },
     { status: 202 }
@@ -146,9 +190,33 @@ export async function DELETE(request: Request) {
       );
     }
     const result = await cancelBackgroundSync([rawServerId]);
+    if (result.cancelledIds.length > 0) {
+      const servers = await prisma.wsusServer.findMany({
+        where: { id: { in: result.cancelledIds } },
+        select: { name: true },
+      });
+      await recordUserAction({
+        username: session.username,
+        action: "Cancelled portal synchronization",
+        target: servers.map((server) => server.name).join(", "),
+        details: "Cancelled a running synchronization from the portal.",
+      });
+    }
     return NextResponse.json({ success: true, ...result });
   }
 
   const result = await cancelBackgroundSync();
+  if (result.cancelledIds.length > 0) {
+    const servers = await prisma.wsusServer.findMany({
+      where: { id: { in: result.cancelledIds } },
+      select: { name: true },
+    });
+    await recordUserAction({
+      username: session.username,
+      action: "Cancelled portal synchronization",
+      target: servers.map((server) => server.name).join(", "),
+      details: "Cancelled running synchronizations from the portal.",
+    });
+  }
   return NextResponse.json({ success: true, ...result });
 }

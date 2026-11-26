@@ -17,7 +17,7 @@ function createPrismaClient() {
 const cachedPrisma = globalForPrisma.prisma;
 
 export const prisma =
-  cachedPrisma && "wsusServer" in cachedPrisma
+  cachedPrisma && "wsusServer" in cachedPrisma && "userActionLog" in cachedPrisma
     ? cachedPrisma
     : createPrismaClient();
 

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { canManageUsers, isValidRole } from "@/lib/rbac";
+import { recordUserAction } from "@/lib/user-action-log";
 
 export async function PATCH(
   request: Request,
@@ -92,6 +93,17 @@ export async function PATCH(
       },
     });
 
+    await recordUserAction({
+      username: session.username,
+      action: "Updated portal user",
+      target: updated.username,
+      details: [
+        data.role ? `Changed role to ${data.role}.` : null,
+        data.passwordHash ? "Changed password." : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    });
     return NextResponse.json({ user: updated });
   } catch (err) {
     const message =
@@ -144,5 +156,11 @@ export async function DELETE(
   }
 
   await prisma.user.delete({ where: { id: userId } });
+  await recordUserAction({
+    username: session.username,
+    action: "Deleted portal user",
+    target: target.username,
+    details: `Deleted user with ${target.role} role.`,
+  });
   return NextResponse.json({ success: true });
 }

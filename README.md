@@ -4,11 +4,13 @@ A Next.js + Prisma + PostgreSQL dashboard for browsing WSUS patch inventory, cli
 
 Administrators can create computer groups, add computers to groups, start upstream synchronization, and approve patches immediately or at a scheduled time from **WSUS Control**. The WSUS REST API keeps write operations disabled at install time unless `--enable-write-operations` is specified; future approvals require the portal's persistent Node.js scheduler and the `WsusApprovalSchedule` database migration.
 
-Before using scheduled approvals on an existing installation, apply the additive migration with:
+Before using scheduled approvals or the user-action Logs page on an existing installation, apply pending additive migrations with:
 
 ```bash
 pnpm --filter @wsus-app/web exec prisma migrate deploy
 ```
+
+The Logs page records user-initiated portal operations, including sync requests, approvals, and configuration changes. Background WSUS status updates are not treated as user actions.
 
 Run the portal as a persistent Node.js server so the in-process scheduler can execute due approvals.
 

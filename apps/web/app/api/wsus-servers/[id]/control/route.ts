@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { canControlWsus } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { recordUserAction } from "@/lib/user-action-log";
 import {
   callWsusApi,
   type WsusComputer,
@@ -148,6 +149,26 @@ export async function POST(request: Request, context: RouteContext) {
     const data = await callWsusApi<unknown>(result.server, path, {
       method: "POST",
       body: payload,
+    });
+    const actionLabels: Record<string, string> = {
+      "create-group": "Created WSUS computer group",
+      "add-computer": "Added computer to WSUS group",
+      sync: "Requested upstream WSUS synchronization",
+      approve: "Approved WSUS update",
+    };
+    const details =
+      action === "create-group"
+        ? `Created group "${String(body.name).trim()}".`
+        : action === "add-computer"
+          ? `Added computer "${String(body.computerId).trim()}" to group ${String(body.groupId)}.`
+          : action === "approve"
+            ? `Approved update ${String(body.updateId)} revision ${String(body.revisionNumber)} for group ${String(body.targetGroupId)}.`
+            : "Requested synchronization from the upstream WSUS server.";
+    await recordUserAction({
+      username: result.session.username,
+      action: actionLabels[action as keyof typeof actionLabels],
+      target: result.server.name,
+      details,
     });
     return NextResponse.json({ data }, { status });
   } catch (error) {

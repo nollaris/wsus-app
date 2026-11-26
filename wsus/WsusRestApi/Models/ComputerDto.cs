@@ -63,4 +63,19 @@ namespace WsusRestApi.Models
         public string ErrorMessage { get; set; }
         public DateTime? LastErrorTimeUtc { get; set; }
     }
+
+    public class ClientPatchRecordDto
+    {
+        public string ComputerId { get; set; }
+        public string FullDomainName { get; set; }
+        public string IpAddress { get; set; }
+        public string UpdateId { get; set; }
+        public int RevisionNumber { get; set; }
+        public string Title { get; set; }
+        public string KbArticle { get; set; }
+        public string Classification { get; set; }
+        public string InstallationState { get; set; }
+        public string ErrorCode { get; set; }
+        public string ErrorMessage { get; set; }
+    }
 }

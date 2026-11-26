@@ -15,6 +15,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { formatBangkokTimestamp } from "@/lib/format";
 import { getSession } from "@/lib/auth";
 import { SyncHistoryTable } from "./_components/sync-history-table";
 import { WsusServerControl } from "./_components/wsus-server-control";
@@ -30,16 +31,8 @@ import {
 
 export const instant = false;
 
-function formatBangkokTimestamp(value: Date | null) {
-  if (!value) return "Never";
-  return value.toLocaleString("en-GB", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Bangkok",
-  });
+function formatSyncTimestamp(value: Date | null) {
+  return formatBangkokTimestamp(value, "Never");
 }
 
 export async function generateMetadata({
@@ -211,7 +204,7 @@ export default async function ServerControlPage({
                 {syncSetting.lastModifiedTime && (
                   <>
                     {" "}
-                    · {formatBangkokTimestamp(syncSetting.lastModifiedTime)} ICT
+                    · {formatSyncTimestamp(syncSetting.lastModifiedTime)}
                   </>
                 )}
               </div>
@@ -229,8 +222,7 @@ export default async function ServerControlPage({
         <CardHeader>
           <CardTitle>Recent synchronization runs</CardTitle>
           <CardDescription>
-            {serializedHistory.length.toLocaleString()} records · times shown in
-            ICT (Asia/Bangkok)
+            {serializedHistory.length.toLocaleString()} records · Timestamp (UTC+7)
           </CardDescription>
         </CardHeader>
         <CardContent className="min-w-0">
@@ -313,9 +305,9 @@ export default async function ServerControlPage({
           </div>
 
           <div className="mt-5 border-t pt-4 text-sm">
-            <span className="text-muted-foreground">Last sync · ICT </span>
+            <span className="text-muted-foreground">Timestamp </span>
             <span className="font-medium">
-              {formatBangkokTimestamp(server.lastSyncedAt)}
+              {formatSyncTimestamp(server.lastSyncedAt)}
             </span>
           </div>
         </section>

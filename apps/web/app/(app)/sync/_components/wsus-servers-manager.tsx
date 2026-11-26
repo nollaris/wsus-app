@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { canManageServers } from "@/lib/rbac";
+import { formatBangkokTimestamp } from "@/lib/format";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -55,16 +56,7 @@ export interface WsusServerItem {
 }
 
 function formatTimestamp(value: string | null) {
-  if (!value) return "Never";
-  return new Date(value).toLocaleString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "Asia/Bangkok",
-  });
+  return formatBangkokTimestamp(value, "Never");
 }
 
 export function WsusServersManager({
@@ -362,7 +354,7 @@ export function WsusServersManager({
                     <TableHead>Server</TableHead>
                     <TableHead>API Endpoint</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Last Sync · ICT</TableHead>
+                    <TableHead>Timestamp</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

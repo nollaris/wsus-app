@@ -9,6 +9,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { formatBangkokTimestamp } from "@/lib/format";
 import {
   Card,
   CardContent,
@@ -219,7 +220,7 @@ export default async function DashboardPage() {
             </div>
             <p className="text-xs text-muted-foreground">
               {latestSync?.startTime
-                ? latestSync.startTime.toISOString().replace("T", " ").slice(0, 19)
+                ? formatBangkokTimestamp(latestSync.startTime)
                 : "No sync history"}
             </p>
           </CardContent>
@@ -303,7 +304,7 @@ export default async function DashboardPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Start Time</TableHead>
+                  <TableHead>Timestamp</TableHead>
                   <TableHead>Trigger</TableHead>
                   <TableHead className="text-right">Result</TableHead>
                 </TableRow>
@@ -312,9 +313,7 @@ export default async function DashboardPage() {
                 {recentSyncs.map((s) => (
                   <TableRow key={s.synchronizationId}>
                     <TableCell className="font-mono text-xs">
-                      {s.startTime
-                        ? s.startTime.toISOString().replace("T", " ").slice(0, 19)
-                        : "-"}
+                      {formatBangkokTimestamp(s.startTime)}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">

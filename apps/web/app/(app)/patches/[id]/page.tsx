@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { formatKbArticle } from "@/lib/format";
+import { formatBangkokTimestamp, formatKbArticle } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@workspace/ui/components/ui/card";
 import { Badge } from "@workspace/ui/components/ui/badge";
 import { PatchClientsTable } from "./_components/patch-clients-table";
@@ -166,9 +166,7 @@ export default async function PatchDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent className="font-mono text-sm">
-            {patch.arrivalDate
-              ? patch.arrivalDate.toISOString().replace("T", " ").slice(0, 19)
-              : "-"}
+            {formatBangkokTimestamp(patch.arrivalDate)}
           </CardContent>
         </Card>
         <Card>
@@ -178,9 +176,7 @@ export default async function PatchDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent className="font-mono text-sm">
-            {patch.creationDate
-              ? patch.creationDate.toISOString().replace("T", " ").slice(0, 19)
-              : "-"}
+            {formatBangkokTimestamp(patch.creationDate)}
           </CardContent>
         </Card>
       </div>
@@ -233,9 +229,7 @@ export default async function PatchDetailPage({
                         Rev {s.revisionNumber}
                       </TableCell>
                       <TableCell className="font-mono text-xs">
-                        {s.arrivalDate
-                          ? s.arrivalDate.toISOString().replace("T", " ").slice(0, 19)
-                          : "-"}
+                        {formatBangkokTimestamp(s.arrivalDate)}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex flex-wrap justify-end gap-1">

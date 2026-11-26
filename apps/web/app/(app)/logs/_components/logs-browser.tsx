@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { formatBangkokTimestamp } from "@/lib/format";
 import { Button } from "@workspace/ui/components/ui/button";
 import { Card, CardContent, CardDescription, CardTitle } from "@workspace/ui/components/ui/card";
 import { Input } from "@workspace/ui/components/ui/input";
@@ -32,16 +33,7 @@ interface UserAction {
 }
 
 function formatTimestamp(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString("en-GB", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Bangkok",
-  });
+  return formatBangkokTimestamp(iso);
 }
 
 export function LogsBrowser() {
@@ -173,7 +165,7 @@ export function LogsBrowser() {
             <Table className="min-w-[760px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Time · ICT</TableHead>
+                  <TableHead>Timestamp</TableHead>
                   <TableHead>User</TableHead>
                   <TableHead>Action</TableHead>
                   <TableHead>Target</TableHead>

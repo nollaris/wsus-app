@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { formatBangkokTimestamp } from "@/lib/format";
 import { Badge } from "@workspace/ui/components/ui/badge";
 import { Button } from "@workspace/ui/components/ui/button";
 import {
@@ -29,20 +30,6 @@ export interface SyncHistoryRow {
   startedManually: boolean;
   error: string | null;
   errorText: string | null;
-}
-
-function formatBangkokTimestamp(iso: string | null): string {
-  if (!iso) return "-";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString("en-GB", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Bangkok",
-  });
 }
 
 function getResultBadgeClass(result: string): string {
@@ -77,8 +64,8 @@ export function SyncHistoryTable({ rows }: { rows: SyncHistoryRow[] }) {
         <Table className="min-w-[680px]">
           <TableHeader>
             <TableRow>
-              <TableHead>Started · ICT</TableHead>
-              <TableHead>Ended · ICT</TableHead>
+              <TableHead>Started Timestamp</TableHead>
+              <TableHead>Ended Timestamp</TableHead>
               <TableHead>Trigger</TableHead>
               <TableHead>Result</TableHead>
               <TableHead>Details</TableHead>

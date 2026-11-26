@@ -30,6 +30,7 @@ import {
   TableRow,
 } from "@workspace/ui/components/ui/table";
 import { SortableTableHead, type SortDir } from "@/components/sortable-table-head";
+import { formatBangkokTimestamp } from "@/lib/format";
 
 export interface ClientRow {
   serverName: string;
@@ -386,7 +387,7 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
               <SortableTableHead label="IP Address" sortKey="ipAddress" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
               <SortableTableHead label="OS" sortKey="osDescription" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
               <SortableTableHead label="Target Group" sortKey="assignedTargetGroups" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
-              <SortableTableHead label="Last Sync" sortKey="lastSyncTime" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTableHead label="Timestamp" sortKey="lastSyncTime" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
               <SortableTableHead label="Installed" sortKey="installed" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
               <SortableTableHead label="Pending" sortKey="notInstalled" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
               <SortableTableHead label="Failed" sortKey="failed" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
@@ -448,12 +449,10 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                     })()}
                   </TableCell>
                   <TableCell
-                    className="font-mono text-xs text-muted-foreground"
+                    className="font-mono text-xs text-muted-foreground whitespace-nowrap"
                     title={c.lastSyncTime ?? undefined}
                   >
-                    {c.lastSyncTime
-                      ? c.lastSyncTime.replace("T", " ").slice(5, 16)
-                      : "-"}
+                    {formatBangkokTimestamp(c.lastSyncTime)}
                   </TableCell>
                   <TableCell className="text-right">
                     <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-700">

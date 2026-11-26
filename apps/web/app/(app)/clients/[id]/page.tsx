@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { formatBangkokTimestamp } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@workspace/ui/components/ui/card";
 import { Badge } from "@workspace/ui/components/ui/badge";
 import { ClientComplianceCharts } from "./_components/client-compliance-charts";
@@ -117,9 +118,7 @@ export default async function ClientDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent className="font-mono text-sm">
-            {client.lastSyncTime
-              ? client.lastSyncTime.toISOString().replace("T", " ").slice(0, 19)
-              : "-"}
+            {formatBangkokTimestamp(client.lastSyncTime)}
           </CardContent>
         </Card>
         <Card>
@@ -129,12 +128,7 @@ export default async function ClientDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent className="font-mono text-sm">
-            {client.lastReportedStatusTime
-              ? client.lastReportedStatusTime
-                  .toISOString()
-                  .replace("T", " ")
-                  .slice(0, 19)
-              : "-"}
+            {formatBangkokTimestamp(client.lastReportedStatusTime)}
           </CardContent>
         </Card>
       </div>

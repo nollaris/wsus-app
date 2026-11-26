@@ -550,6 +550,35 @@ namespace WsusRestApi.Services
                     target.OSInfo.Version.Build)
                 : null;
 
+            string make = NullIfWhiteSpace(target.Make);
+            string model = NullIfWhiteSpace(target.Model);
+            string procArch = ReadTargetStringProperty(target, "ProcessorArchitecture");
+            if (string.IsNullOrEmpty(procArch) && target.OSInfo != null)
+            {
+                procArch = ReadTargetStringProperty(target.OSInfo, "ProcessorArchitecture");
+            }
+
+            string biosVersion = null;
+            DateTime? biosReleaseUtc = null;
+            string biosVerOnly = null;
+            if (target.BiosInfo != null)
+            {
+                string biosName = NullIfWhiteSpace(target.BiosInfo.Name);
+                biosVerOnly = NullIfWhiteSpace(target.BiosInfo.Version);
+                if (biosName != null && biosVerOnly != null && !string.Equals(biosName, biosVerOnly, StringComparison.OrdinalIgnoreCase))
+                {
+                    biosVersion = biosName + " " + biosVerOnly;
+                }
+                else
+                {
+                    biosVersion = biosVerOnly ?? biosName;
+                }
+                biosReleaseUtc = ToNullableUtc(target.BiosInfo.ReleaseDate);
+            }
+
+            string firmwareVersion = ReadTargetStringProperty(target, "FirmwareVersion") ?? biosVerOnly;
+            string mobileOperator = ReadTargetStringProperty(target, "MobileOperator");
+
             return new ComputerDto
             {
                 ComputerId = target.Id,
@@ -558,6 +587,13 @@ namespace WsusRestApi.Services
                 IpAddress = target.IPAddress != null ? target.IPAddress.ToString() : string.Empty,
                 OsDescription = target.OSDescription ?? "Unknown",
                 OsVersion = osVer,
+                Make = make,
+                Model = model,
+                ProcessorArchitecture = procArch,
+                BiosVersion = biosVersion,
+                BiosReleaseDateUtc = biosReleaseUtc,
+                FirmwareVersion = firmwareVersion,
+                MobileOperator = mobileOperator,
                 ClientVersion = target.ClientVersion != null ? target.ClientVersion.ToString() : string.Empty,
                 ComputerRole = target.ComputerRole.ToString(),
                 RequestedTargetGroup = target.RequestedTargetGroupName,
@@ -850,6 +886,31 @@ namespace WsusRestApi.Services
                 return null;
 
             return dt.Kind == DateTimeKind.Utc ? dt : dt.ToUniversalTime();
+        }
+
+        private static string NullIfWhiteSpace(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+
+        private static string ReadTargetStringProperty(object instance, string propertyName)
+        {
+            if (instance == null || string.IsNullOrEmpty(propertyName))
+                return null;
+
+            try
+            {
+                System.Reflection.PropertyInfo prop = instance.GetType().GetProperty(propertyName);
+                if (prop == null)
+                    return null;
+
+                object val = prop.GetValue(instance, null);
+                return val != null ? NullIfWhiteSpace(val.ToString()) : null;
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 }

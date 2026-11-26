@@ -13,7 +13,12 @@ import { Button } from "@workspace/ui/components/ui/button";
 import { Input } from "@workspace/ui/components/ui/input";
 import { Label } from "@workspace/ui/components/ui/label";
 import { Badge } from "@workspace/ui/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@workspace/ui/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@workspace/ui/components/ui/card";
 import { getComplianceTier, splitTargetGroups } from "../_lib/wsus-compliance";
 import {
   Select,
@@ -29,7 +34,10 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/ui/table";
-import { SortableTableHead, type SortDir } from "@/components/sortable-table-head";
+import {
+  SortableTableHead,
+  type SortDir,
+} from "@/components/sortable-table-head";
 import { formatBangkokTimestamp } from "@/lib/format";
 
 export interface ClientRow {
@@ -38,12 +46,15 @@ export interface ClientRow {
   computerName: string;
   ipAddress: string;
   osDescription: string;
+  make?: string | null;
+  model?: string | null;
   clientVersion: string;
   computerRole: string;
   assignedTargetGroups: string;
   lastSyncTime: string | null;
   lastReportedStatusTime: string | null;
   installed: number;
+  notApplicable: number;
   notInstalled: number;
   failed: number;
   applicable: number;
@@ -76,7 +87,12 @@ function compareStrings(a: string, b: string) {
 function compareIp(a: string, b: string) {
   const pa = a.split(".").map(Number);
   const pb = b.split(".").map(Number);
-  if (pa.length === 4 && pb.length === 4 && pa.every((n) => !Number.isNaN(n)) && pb.every((n) => !Number.isNaN(n))) {
+  if (
+    pa.length === 4 &&
+    pb.length === 4 &&
+    pa.every((n) => !Number.isNaN(n)) &&
+    pb.every((n) => !Number.isNaN(n))
+  ) {
     for (let i = 0; i < 4; i++) {
       if (pa[i] !== pb[i]) return pa[i] - pb[i];
     }
@@ -121,7 +137,7 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
   const groups = useMemo(() => {
     const set = new Set<string>();
     const serverClients = clients.filter(
-      (c) => serverFilter === "all" || c.serverName === serverFilter
+      (c) => serverFilter === "all" || c.serverName === serverFilter,
     );
     for (const client of serverClients) {
       for (const g of splitTargetGroups(client.assignedTargetGroups)) {
@@ -144,7 +160,11 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
         return false;
       }
       if (!q) return true;
-      return c.computerName.toLowerCase().includes(q);
+      return (
+        c.computerName.toLowerCase().includes(q) ||
+        (c.make?.toLowerCase().includes(q) ?? false) ||
+        (c.model?.toLowerCase().includes(q) ?? false)
+      );
     });
   }, [clients, search, serverFilter, groupFilter]);
 
@@ -186,7 +206,7 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
           return (
             compareStrings(
               splitTargetGroups(a.assignedTargetGroups).join(", "),
-              splitTargetGroups(b.assignedTargetGroups).join(", ")
+              splitTargetGroups(b.assignedTargetGroups).join(", "),
             ) * mul
           );
         case "lastSyncTime": {
@@ -195,7 +215,10 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
           return (ta - tb) * mul;
         }
         case "installed":
-          return (a.installed - b.installed) * mul;
+          return (
+            (a.installed + a.notApplicable - (b.installed + b.notApplicable)) *
+            mul
+          );
         case "notInstalled":
           return (a.notInstalled - b.notInstalled) * mul;
         case "failed":
@@ -225,7 +248,9 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <span className={`text-2xl font-bold tabular-nums ${summary.tier.textClass}`}>
+              <span
+                className={`text-2xl font-bold tabular-nums ${summary.tier.textClass}`}
+              >
                 {Math.round(summary.fleetScore)}%
               </span>
               <Badge variant="secondary" className={summary.tier.badgeClass}>
@@ -233,7 +258,8 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {summary.fullyCompliant} of {summary.total} computers fully compliant
+              {summary.fullyCompliant} of {summary.total} computers fully
+              compliant
             </p>
           </CardContent>
         </Card>
@@ -378,106 +404,192 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
         </div>
       </section>
 
-      <div className="rounded-md border bg-background min-w-0 overflow-hidden">
-        <Table className="[&_th]:px-2 [&_td]:px-2 text-xs">
+      <div className="rounded-md border bg-background min-w-0 overflow-x-auto">
+        <Table className="[&_th]:px-2.5 [&_td]:px-2.5 text-xs">
           <TableHeader>
             <TableRow>
-              <SortableTableHead label="Computer Name" sortKey="computerName" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
-              <SortableTableHead label="WSUS Server" sortKey="serverName" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
-              <SortableTableHead label="IP Address" sortKey="ipAddress" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
-              <SortableTableHead label="OS" sortKey="osDescription" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
-              <SortableTableHead label="Target Group" sortKey="assignedTargetGroups" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
-              <SortableTableHead label="Timestamp" sortKey="lastSyncTime" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
-              <SortableTableHead label="Installed" sortKey="installed" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
-              <SortableTableHead label="Pending" sortKey="notInstalled" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
-              <SortableTableHead label="Failed" sortKey="failed" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
-              <SortableTableHead label="Compliance" sortKey="complianceScore" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
+              <SortableTableHead
+                label="Computer Name"
+                sortKey="computerName"
+                activeKey={sortKey}
+                dir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableTableHead
+                label="IP Address"
+                sortKey="ipAddress"
+                activeKey={sortKey}
+                dir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableTableHead
+                label="OS"
+                sortKey="osDescription"
+                activeKey={sortKey}
+                dir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableTableHead
+                label="WSUS Server"
+                sortKey="serverName"
+                activeKey={sortKey}
+                dir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableTableHead
+                label="Target Group"
+                sortKey="assignedTargetGroups"
+                activeKey={sortKey}
+                dir={sortDir}
+                onSort={handleSort}
+              />
+              <SortableTableHead
+                label="Installed / N/A"
+                sortKey="installed"
+                activeKey={sortKey}
+                dir={sortDir}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortableTableHead
+                label="Pending"
+                sortKey="notInstalled"
+                activeKey={sortKey}
+                dir={sortDir}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortableTableHead
+                label="Failed"
+                sortKey="failed"
+                activeKey={sortKey}
+                dir={sortDir}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortableTableHead
+                label="Compliance"
+                sortKey="complianceScore"
+                activeKey={sortKey}
+                dir={sortDir}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortableTableHead
+                label="Timestamp"
+                sortKey="lastSyncTime"
+                activeKey={sortKey}
+                dir={sortDir}
+                onSort={handleSort}
+                align="right"
+              />
             </TableRow>
           </TableHeader>
           <TableBody>
             {paginated.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
+                <TableCell
+                  colSpan={10}
+                  className="h-24 text-center text-muted-foreground"
+                >
                   No matching clients found.
                 </TableCell>
               </TableRow>
             ) : (
               paginated.map((c) => {
                 const tier = getComplianceTier(c.complianceScore);
+                const installedOrNa = c.installed + c.notApplicable;
                 return (
-                <TableRow key={c.computerTargetId}>
-                  <TableCell className="max-w-[160px] xl:max-w-[210px] font-medium">
-                    <Link
-                      href={`/clients/${c.computerTargetId}`}
-                      title={c.computerName}
-                      className="flex items-center gap-1.5 text-primary hover:underline"
+                  <TableRow key={c.computerTargetId}>
+                    <TableCell className="min-w-[160px] max-w-[220px] font-medium">
+                      <Link
+                        href={`/clients/${c.computerTargetId}`}
+                        title={c.computerName}
+                        className="flex items-center gap-1.5 text-primary hover:underline"
+                      >
+                        <Monitor className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{c.computerName}</span>
+                      </Link>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs whitespace-nowrap">
+                      {c.ipAddress}
+                    </TableCell>
+                    <TableCell className="min-w-[130px] max-w-[190px] text-xs">
+                      <span className="block truncate" title={c.osDescription}>
+                        {c.osDescription}
+                      </span>
+                    </TableCell>
+                    <TableCell className="max-w-[120px] font-mono text-xs text-muted-foreground whitespace-nowrap">
+                      <span
+                        className="block truncate"
+                        title={c.serverName || "-"}
+                      >
+                        {c.serverName || "-"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="min-w-[110px]">
+                      {(() => {
+                        const targetGroups = splitTargetGroups(
+                          c.assignedTargetGroups,
+                        );
+                        if (targetGroups.length === 0) {
+                          return (
+                            <span className="text-xs text-muted-foreground">
+                              -
+                            </span>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {targetGroups.map((group) => (
+                              <Badge
+                                key={group}
+                                variant="outline"
+                                className="text-xs font-normal"
+                              >
+                                {group}
+                              </Badge>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell
+                      className="text-right whitespace-nowrap"
+                      title={`Installed: ${c.installed.toLocaleString()}, Not Applicable: ${c.notApplicable.toLocaleString()}`}
                     >
-                      <Monitor className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{c.computerName}</span>
-                    </Link>
-                  </TableCell>
-                  <TableCell className="max-w-[105px] font-mono text-xs text-muted-foreground">
-                    <span className="block truncate" title={c.serverName || "-"}>
-                      {c.serverName || "-"}
-                    </span>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{c.ipAddress}</TableCell>
-                  <TableCell className="max-w-[110px] text-xs">
-                    <span className="block truncate" title={c.osDescription}>
-                      {c.osDescription}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    {(() => {
-                      const targetGroups = splitTargetGroups(c.assignedTargetGroups);
-                      if (targetGroups.length === 0) {
-                        return <span className="text-xs text-muted-foreground">-</span>;
-                      }
-                      return (
-                        <div className="flex flex-wrap gap-1">
-                          {targetGroups.map((group) => (
-                            <Badge
-                              key={group}
-                              variant="outline"
-                              className="text-xs font-normal"
-                            >
-                              {group}
-                            </Badge>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </TableCell>
-                  <TableCell
-                    className="font-mono text-xs text-muted-foreground whitespace-nowrap"
-                    title={c.lastSyncTime ?? undefined}
-                  >
-                    {formatBangkokTimestamp(c.lastSyncTime)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-700">
-                      {c.installed}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge variant="outline">{c.notInstalled}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {c.failed > 0 ? (
-                      <Badge variant="destructive">{c.failed}</Badge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">0</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge
-                      variant="secondary"
-                      className={`tabular-nums ${tier.badgeClass}`}
+                      <Badge
+                        variant="secondary"
+                        className="bg-emerald-500/15 text-emerald-700"
+                      >
+                        {installedOrNa.toLocaleString()}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
+                      <Badge variant="outline">{c.notInstalled}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
+                      {c.failed > 0 ? (
+                        <Badge variant="destructive">{c.failed}</Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">0</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
+                      <Badge
+                        variant="secondary"
+                        className={`tabular-nums ${tier.badgeClass}`}
+                      >
+                        {Math.round(c.complianceScore)}%
+                      </Badge>
+                    </TableCell>
+                    <TableCell
+                      className="text-right font-mono text-xs text-muted-foreground whitespace-nowrap"
+                      title={c.lastSyncTime ?? undefined}
                     >
-                      {Math.round(c.complianceScore)}%
-                    </Badge>
-                  </TableCell>
-                </TableRow>
+                      {formatBangkokTimestamp(c.lastSyncTime)}
+                    </TableCell>
+                  </TableRow>
                 );
               })
             )}

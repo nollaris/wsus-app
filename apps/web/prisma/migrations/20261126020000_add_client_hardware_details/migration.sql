@@ -1,0 +1,8 @@
+ALTER TABLE "ClientStatus"
+  ADD COLUMN IF NOT EXISTS "make" TEXT,
+  ADD COLUMN IF NOT EXISTS "model" TEXT,
+  ADD COLUMN IF NOT EXISTS "processorArchitecture" TEXT,
+  ADD COLUMN IF NOT EXISTS "biosVersion" TEXT,
+  ADD COLUMN IF NOT EXISTS "biosReleaseDate" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "firmwareVersion" TEXT,
+  ADD COLUMN IF NOT EXISTS "mobileOperator" TEXT;

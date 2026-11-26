@@ -16,6 +16,13 @@ namespace WsusRestApi.Models
         public string IpAddress { get; set; }
         public string OsDescription { get; set; }
         public string OsVersion { get; set; }
+        public string Make { get; set; }
+        public string Model { get; set; }
+        public string ProcessorArchitecture { get; set; }
+        public string BiosVersion { get; set; }
+        public DateTime? BiosReleaseDateUtc { get; set; }
+        public string FirmwareVersion { get; set; }
+        public string MobileOperator { get; set; }
         public string ClientVersion { get; set; }
         public string ComputerRole { get; set; }
         public string RequestedTargetGroup { get; set; }

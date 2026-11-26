@@ -58,6 +58,13 @@ model ClientStatus {
   ipAddress              String
   osDescription          String
   osVersion              String?
+  make                   String?
+  model                  String?
+  processorArchitecture  String?
+  biosVersion            String?
+  biosReleaseDate        DateTime?
+  firmwareVersion        String?
+  mobileOperator         String?
   clientVersion          String
   computerRole           String
   requestedTargetGroup   String?

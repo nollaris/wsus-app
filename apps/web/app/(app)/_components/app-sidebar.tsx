@@ -27,14 +27,34 @@ import {
   SidebarMenuItem,
 } from "@workspace/ui/components/ui/sidebar";
 
-const NAV_ITEMS = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard, adminOnly: false },
-  { title: "Client Status", url: "/clients", icon: Monitor, adminOnly: false },
-  { title: "Patches", url: "/patches", icon: ShieldAlert, adminOnly: false },
-  { title: "Sync & Servers", url: "/sync", icon: RefreshCw, adminOnly: false },
-  { title: "Logs", url: "/logs", icon: ScrollText, adminOnly: false },
-  { title: "Users", url: "/users", icon: Users, adminOnly: true },
-  { title: "Settings", url: "/settings", icon: Settings2, adminOnly: false },
+const NAV_GROUPS = [
+  {
+    label: "Overview",
+    items: [
+      { title: "Dashboard", url: "/", icon: LayoutDashboard, adminOnly: false },
+    ],
+  },
+  {
+    label: "Monitoring",
+    items: [
+      { title: "Client Status", url: "/clients", icon: Monitor, adminOnly: false },
+      { title: "Patches", url: "/patches", icon: ShieldAlert, adminOnly: false },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { title: "Sync & Servers", url: "/sync", icon: RefreshCw, adminOnly: false },
+      { title: "Logs", url: "/logs", icon: ScrollText, adminOnly: false },
+    ],
+  },
+  {
+    label: "Administration",
+    items: [
+      { title: "Users", url: "/users", icon: Users, adminOnly: true },
+      { title: "Settings", url: "/settings", icon: Settings2, adminOnly: false },
+    ],
+  },
 ];
 
 export function AppSidebar({
@@ -69,33 +89,40 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Platform</SidebarGroupLabel>
-          <SidebarMenu>
-            {NAV_ITEMS.filter(
-              (item) => !item.adminOnly || canManageUsers(user.role)
-            ).map((item) => {
-              const Icon = item.icon;
-              const isActive =
-                item.url === "/"
-                  ? pathname === "/"
-                  : pathname === item.url ||
-                    pathname.startsWith(`${item.url}/`);
-              return (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton
-                    isActive={isActive}
-                    tooltip={item.title}
-                    render={<Link href={item.url} />}
-                  >
-                    <Icon />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              );
-            })}
-          </SidebarMenu>
-        </SidebarGroup>
+        {NAV_GROUPS.map((group) => {
+          const visibleItems = group.items.filter(
+            (item) => !item.adminOnly || canManageUsers(user.role)
+          );
+          if (visibleItems.length === 0) return null;
+
+          return (
+            <SidebarGroup key={group.label}>
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+              <SidebarMenu>
+                {visibleItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive =
+                    item.url === "/"
+                      ? pathname === "/"
+                      : pathname === item.url ||
+                        pathname.startsWith(`${item.url}/`);
+                  return (
+                    <SidebarMenuItem key={item.url}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        tooltip={item.title}
+                        render={<Link href={item.url} />}
+                      >
+                        <Icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroup>
+          );
+        })}
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />

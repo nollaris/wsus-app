@@ -105,6 +105,8 @@ export default async function ClientsPage() {
         osVersion: c.osVersion,
         patches: osPatchesByClient.get(c.computerTargetId),
       }),
+      make: c.make ?? null,
+      model: c.model ?? null,
       clientVersion: c.clientVersion,
       computerRole: c.computerRole,
       assignedTargetGroups: c.assignedTargetGroups,
@@ -113,6 +115,7 @@ export default async function ClientsPage() {
         ? c.lastReportedStatusTime.toISOString()
         : null,
       installed: counts.installed,
+      notApplicable: counts.notApplicable,
       notInstalled: counts.pending,
       failed: counts.failed,
       applicable,

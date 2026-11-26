@@ -133,6 +133,40 @@ export default async function ClientDetailPage({
         </Card>
       </div>
 
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">Additional Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <dt className="text-xs text-muted-foreground">Computer make</dt>
+              <dd className="mt-0.5 font-medium">{client.make || "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Computer model</dt>
+              <dd className="mt-0.5 font-medium">{client.model || "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Processor</dt>
+              <dd className="mt-0.5 font-mono">{client.processorArchitecture || "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">BIOS version</dt>
+              <dd className="mt-0.5 font-mono">{client.biosVersion || "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Firmware version</dt>
+              <dd className="mt-0.5 font-mono">{client.firmwareVersion || "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Mobile operator</dt>
+              <dd className="mt-0.5">{client.mobileOperator || "-"}</dd>
+            </div>
+          </dl>
+        </CardContent>
+      </Card>
+
       <ClientComplianceCharts
         patches={patches}
         summaryCounts={{

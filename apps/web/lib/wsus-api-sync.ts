@@ -254,6 +254,13 @@ interface RemoteComputer {
   ipAddress: string;
   osDescription: string;
   osVersion?: string | null;
+  make?: string | null;
+  model?: string | null;
+  processorArchitecture?: string | null;
+  biosVersion?: string | null;
+  biosReleaseDateUtc?: string | null;
+  firmwareVersion?: string | null;
+  mobileOperator?: string | null;
   clientVersion: string;
   computerRole: string;
   requestedTargetGroup?: string | null;
@@ -1032,6 +1039,15 @@ export async function syncWsusServerById(
                 ipAddress: c.ipAddress ?? "",
                 osDescription: c.osDescription ?? "Unknown",
                 osVersion: c.osVersion ?? null,
+                make: c.make ?? null,
+                model: c.model ?? null,
+                processorArchitecture: c.processorArchitecture ?? null,
+                biosVersion: c.biosVersion ?? null,
+                biosReleaseDate: c.biosReleaseDateUtc
+                  ? new Date(c.biosReleaseDateUtc)
+                  : null,
+                firmwareVersion: c.firmwareVersion ?? null,
+                mobileOperator: c.mobileOperator ?? null,
                 clientVersion: c.clientVersion ?? "",
                 computerRole: c.computerRole ?? "Workstation",
                 requestedTargetGroup: c.requestedTargetGroup ?? null,

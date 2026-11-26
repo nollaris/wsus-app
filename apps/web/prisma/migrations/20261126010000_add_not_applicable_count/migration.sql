@@ -1,0 +1,2 @@
+ALTER TABLE "ClientStatus"
+  ADD COLUMN IF NOT EXISTS "notApplicableCount" INTEGER NOT NULL DEFAULT 0;

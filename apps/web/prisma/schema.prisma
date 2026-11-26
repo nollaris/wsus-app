@@ -64,6 +64,12 @@ model ClientStatus {
   assignedTargetGroups   String
   lastSyncTime           DateTime?
   lastReportedStatusTime DateTime?
+  installedCount         Int       @default(0)
+  neededCount            Int       @default(0)
+  failedCount            Int       @default(0)
+  pendingRebootCount     Int       @default(0)
+  notApplicableCount     Int       @default(0)
+  unknownCount           Int       @default(0)
 
   @@id([serverName, computerTargetId])
   @@index([serverName])

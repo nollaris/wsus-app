@@ -30,6 +30,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableHead,
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/ui/table";
@@ -49,9 +50,12 @@ export interface ClientPatchRow {
 
 const STATE_BADGE: Record<string, string> = {
   Installed: "bg-emerald-500/15 text-emerald-700",
+  InstalledPendingReboot: "bg-teal-500/15 text-teal-700",
   NotInstalled: "bg-amber-500/15 text-amber-700",
-  Failed: "bg-destructive/15 text-destructive",
   Downloaded: "bg-sky-500/15 text-sky-700",
+  Failed: "bg-destructive/15 text-destructive",
+  Unknown: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
+  NotApplicable: "bg-muted text-muted-foreground",
 };
 
 type PatchSortKey =
@@ -195,13 +199,14 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
               <SortableTableHead label="KB" sortKey="kbArticle" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
               <SortableTableHead label="Classification" sortKey="classification" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
               <SortableTableHead label="Approval" sortKey="approvalAction" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
-              <SortableTableHead label="State" sortKey="installationState" activeKey={sortKey} dir={sortDir} onSort={handleSort} align="right" />
+              <SortableTableHead label="State" sortKey="installationState" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+              <TableHead className="text-right">Reason</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {paginated.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   No updates match the filter.
                 </TableCell>
               </TableRow>
@@ -218,27 +223,29 @@ export function ClientPatchesTable({ patches }: { patches: ClientPatchRow[] }) {
                   </TableCell>
                   <TableCell className="text-xs">{p.classification}</TableCell>
                   <TableCell className="text-xs">{p.approvalAction}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="secondary"
+                      className={STATE_BADGE[p.installationState] || ""}
+                    >
+                      {p.installationState}
+                    </Badge>
+                  </TableCell>
                   <TableCell className="text-right">
-                    <div className="inline-flex items-center justify-end gap-2">
-                      <Badge
-                        variant="secondary"
-                        className={STATE_BADGE[p.installationState] || ""}
+                    {p.installationState === "Failed" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-destructive border-destructive/30 hover:bg-destructive/10"
+                        onClick={() => setSelectedFailure(p)}
                       >
-                        {p.installationState}
-                      </Badge>
-                      {p.installationState === "Failed" && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-7 px-2 text-xs text-destructive border-destructive/30 hover:bg-destructive/10"
-                          onClick={() => setSelectedFailure(p)}
-                        >
-                          <AlertCircle className="mr-1 h-3.5 w-3.5" />
-                          View Reason
-                        </Button>
-                      )}
-                    </div>
+                        <AlertCircle className="mr-1 h-3.5 w-3.5" />
+                        View Reason
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

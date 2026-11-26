@@ -225,7 +225,7 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
           <CardContent>
             <div className="flex items-center gap-2">
               <span className={`text-2xl font-bold tabular-nums ${summary.tier.textClass}`}>
-                {summary.fleetScore.toFixed(1)}%
+                {Math.round(summary.fleetScore)}%
               </span>
               <Badge variant="secondary" className={summary.tier.badgeClass}>
                 {summary.tier.label}
@@ -475,7 +475,7 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                       variant="secondary"
                       className={`tabular-nums ${tier.badgeClass}`}
                     >
-                      {c.complianceScore.toFixed(1)}%
+                      {Math.round(c.complianceScore)}%
                     </Badge>
                   </TableCell>
                 </TableRow>

@@ -228,7 +228,9 @@ namespace WsusRestApi.Services
                 scope.IncludedInstallationStates = UpdateInstallationStates.Failed
                     | UpdateInstallationStates.InstalledPendingReboot
                     | UpdateInstallationStates.Downloaded
-                    | UpdateInstallationStates.NotInstalled;
+                    | UpdateInstallationStates.NotInstalled
+                    | UpdateInstallationStates.Unknown
+                    | UpdateInstallationStates.NotApplicable;
                 if (includeInstalled)
                 {
                     scope.IncludedInstallationStates |= UpdateInstallationStates.Installed;
@@ -244,20 +246,10 @@ namespace WsusRestApi.Services
                     foreach (IUpdateInstallationInfo info in installInfos)
                     {
                         UpdateInstallationState state = info.UpdateInstallationState;
-                        bool keep = false;
-                        switch (state)
+                        if (state == UpdateInstallationState.Installed && !includeInstalled)
                         {
-                            case UpdateInstallationState.Failed:
-                            case UpdateInstallationState.InstalledPendingReboot:
-                            case UpdateInstallationState.Downloaded:
-                            case UpdateInstallationState.NotInstalled:
-                                keep = true;
-                                break;
-                            case UpdateInstallationState.Installed:
-                                keep = includeInstalled;
-                                break;
+                            continue;
                         }
-                        if (!keep) continue;
 
                         string updKey = info.UpdateId.ToString();
                         CachedUpdateMetadata meta;
@@ -552,7 +544,10 @@ namespace WsusRestApi.Services
                 complianceStatus = "Compliant";
 
             string osVer = (target.OSInfo != null && target.OSInfo.Version != null)
-                ? target.OSInfo.Version.ToString()
+                ? string.Format("{0}.{1}.{2}",
+                    target.OSInfo.Version.Major,
+                    target.OSInfo.Version.Minor,
+                    target.OSInfo.Version.Build)
                 : null;
 
             return new ComputerDto

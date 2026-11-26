@@ -48,10 +48,21 @@ const scoreChartConfig = {
   value: { label: "Updates" },
 } satisfies ChartConfig;
 
+export interface ClientSummaryCounts {
+  installedCount: number;
+  notApplicableCount?: number;
+  neededCount: number;
+  failedCount: number;
+  pendingRebootCount: number;
+  unknownCount: number;
+}
+
 export function ClientComplianceCharts({
   patches,
+  summaryCounts,
 }: {
   patches: ClientPatchRow[];
+  summaryCounts?: ClientSummaryCounts;
 }) {
   const stats = useMemo(() => {
     const counts = new Map<string, number>();
@@ -70,23 +81,61 @@ export function ClientComplianceCharts({
       }
     }
 
-    const installed = counts.get("Installed") ?? 0;
-    const notInstalled = counts.get("NotInstalled") ?? 0;
-    const downloaded = counts.get("Downloaded") ?? 0;
-    const failed = counts.get("Failed") ?? 0;
-    const unknown = counts.get("Unknown") ?? 0;
-    const notApplicable = counts.get("NotApplicable") ?? 0;
+    const hasSummaryCounts =
+      summaryCounts !== undefined &&
+      (summaryCounts.installedCount > 0 ||
+        (summaryCounts.notApplicableCount ?? 0) > 0 ||
+        summaryCounts.neededCount > 0 ||
+        summaryCounts.failedCount > 0 ||
+        summaryCounts.pendingRebootCount > 0 ||
+        summaryCounts.unknownCount > 0);
 
-    const pending = notInstalled + downloaded;
+    const patchInstalled = counts.get("Installed") ?? 0;
+    const patchNotInstalled = counts.get("NotInstalled") ?? 0;
+    const patchDownloaded = counts.get("Downloaded") ?? 0;
+    const patchPendingReboot = counts.get("InstalledPendingReboot") ?? 0;
+    const patchFailed = counts.get("Failed") ?? 0;
+    const patchUnknown = counts.get("Unknown") ?? 0;
+    const patchNotApplicable = counts.get("NotApplicable") ?? 0;
+
+    const installed = hasSummaryCounts
+      ? Math.max(summaryCounts.installedCount, patchInstalled)
+      : patchInstalled;
+    const notApplicable = hasSummaryCounts
+      ? Math.max(summaryCounts.notApplicableCount ?? 0, patchNotApplicable)
+      : patchNotApplicable;
+    const pending = hasSummaryCounts
+      ? summaryCounts.neededCount + summaryCounts.pendingRebootCount
+      : patchNotInstalled + patchDownloaded + patchPendingReboot;
+    const failed = hasSummaryCounts ? summaryCounts.failedCount : patchFailed;
+    const unknown = patchUnknown;
+
+    if (hasSummaryCounts) {
+      if (installed > 0 && !counts.has("Installed")) {
+        counts.set("Installed", installed);
+      }
+      if (notApplicable > 0 && !counts.has("NotApplicable")) {
+        counts.set("NotApplicable", notApplicable);
+      }
+    }
+
     const { applicable, score, isFullyCompliant: computedFullyCompliant } =
-      computeDeviceCompliance({ installed, pending, failed, unknown });
-    const nonCompliant = Math.max(0, applicable - installed);
+      computeDeviceCompliance({
+        installed,
+        notApplicable,
+        pending,
+        failed,
+        unknown,
+      });
+    const compliantTotal = installed + notApplicable;
+    const nonCompliant = Math.max(0, applicable - compliantTotal);
     const isFullyCompliant = applicable > 0 && computedFullyCompliant;
 
     const stateOrder = [
       "Installed",
       "NotInstalled",
       "Downloaded",
+      "InstalledPendingReboot",
       "Failed",
       "Unknown",
       "NotApplicable",
@@ -105,6 +154,7 @@ export function ClientComplianceCharts({
 
     return {
       installed,
+      compliantTotal,
       pending,
       failed,
       unknown,
@@ -117,7 +167,7 @@ export function ClientComplianceCharts({
       notApprovedCount,
       stateData,
     };
-  }, [patches]);
+  }, [patches, summaryCounts]);
 
   const tier = getComplianceTier(stats.score);
 
@@ -126,14 +176,14 @@ export function ClientComplianceCharts({
       return [{ name: "Compliant", value: 1, fill: tier.color }];
     }
     return [
-      { name: "Installed", value: stats.installed, fill: tier.color },
+      { name: "Installed / N/A", value: stats.compliantTotal, fill: tier.color },
       {
         name: "Remaining",
         value: stats.nonCompliant,
         fill: "hsl(215, 20%, 88%)",
       },
     ];
-  }, [stats.applicable, stats.installed, stats.nonCompliant, tier.color]);
+  }, [stats.applicable, stats.compliantTotal, stats.nonCompliant, tier.color]);
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -143,7 +193,7 @@ export function ClientComplianceCharts({
             <CardTitle>WSUS Compliance Score</CardTitle>
             <CardDescription>
               {stats.applicable > 0
-                ? `${stats.installed.toLocaleString()} of ${stats.applicable.toLocaleString()} applicable updates installed`
+                ? `${stats.compliantTotal.toLocaleString()} of ${stats.applicable.toLocaleString()} updates installed or not applicable`
                 : "No applicable updates reported"}
             </CardDescription>
           </div>

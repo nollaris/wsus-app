@@ -45,20 +45,23 @@ export default async function ClientsPage() {
 
   const countsByClient = new Map<
     string,
-    { installed: number; pending: number; failed: number; unknown: number }
+    { installed: number; notApplicable: number; pending: number; failed: number; unknown: number }
   >();
 
   for (const row of patchCounts) {
     const entry = countsByClient.get(row.computerTargetId) ?? {
       installed: 0,
+      notApplicable: 0,
       pending: 0,
       failed: 0,
       unknown: 0,
     };
     if (row.installationState === "Installed") entry.installed += row._count.id;
+    else if (row.installationState === "NotApplicable") entry.notApplicable += row._count.id;
     else if (
       row.installationState === "NotInstalled" ||
-      row.installationState === "Downloaded"
+      row.installationState === "Downloaded" ||
+      row.installationState === "InstalledPendingReboot"
     )
       entry.pending += row._count.id;
     else if (row.installationState === "Failed") entry.failed += row._count.id;
@@ -67,12 +70,29 @@ export default async function ClientsPage() {
   }
 
   const rows: ClientRow[] = clients.map((c) => {
-    const counts = countsByClient.get(c.computerTargetId) ?? {
-      installed: 0,
-      pending: 0,
-      failed: 0,
-      unknown: 0,
-    };
+    const patchCountsEntry = countsByClient.get(c.computerTargetId);
+    const hasSummaryCounts =
+      c.installedCount > 0 ||
+      c.notApplicableCount > 0 ||
+      c.neededCount > 0 ||
+      c.failedCount > 0 ||
+      c.pendingRebootCount > 0 ||
+      c.unknownCount > 0;
+    const counts = hasSummaryCounts
+      ? {
+          installed: Math.max(c.installedCount, patchCountsEntry?.installed ?? 0),
+          notApplicable: Math.max(c.notApplicableCount, patchCountsEntry?.notApplicable ?? 0),
+          pending: c.neededCount + c.pendingRebootCount,
+          failed: c.failedCount,
+          unknown: patchCountsEntry?.unknown ?? 0,
+        }
+      : {
+          installed: patchCountsEntry?.installed ?? 0,
+          notApplicable: patchCountsEntry?.notApplicable ?? 0,
+          pending: patchCountsEntry?.pending ?? 0,
+          failed: patchCountsEntry?.failed ?? 0,
+          unknown: patchCountsEntry?.unknown ?? 0,
+        };
     const { applicable, score, isFullyCompliant } =
       computeDeviceCompliance(counts);
     return {

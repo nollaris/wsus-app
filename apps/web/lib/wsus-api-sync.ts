@@ -79,7 +79,7 @@ export function resolveSyncLimits(limits?: SyncLimits): ResolvedSyncLimits {
       120000
     ),
     approvedUpdatesOnly: Boolean(limits?.approvedUpdatesOnly),
-    skipInstalledClientPatches: limits?.skipInstalledClientPatches ?? true,
+    skipInstalledClientPatches: limits?.skipInstalledClientPatches ?? false,
   };
 }
 
@@ -260,6 +260,12 @@ interface RemoteComputer {
   assignedTargetGroups?: string[];
   lastSyncTimeUtc?: string | null;
   lastReportedStatusTimeUtc?: string | null;
+  installedCount?: number;
+  neededCount?: number;
+  failedCount?: number;
+  pendingRebootCount?: number;
+  notApplicableCount?: number;
+  unknownCount?: number;
 }
 
 interface RemoteUpdate {
@@ -1034,6 +1040,12 @@ export async function syncWsusServerById(
                 lastReportedStatusTime: c.lastReportedStatusTimeUtc
                   ? new Date(c.lastReportedStatusTimeUtc)
                   : null,
+                installedCount: c.installedCount ?? 0,
+                neededCount: c.neededCount ?? 0,
+                failedCount: c.failedCount ?? 0,
+                pendingRebootCount: c.pendingRebootCount ?? 0,
+                notApplicableCount: c.notApplicableCount ?? 0,
+                unknownCount: c.unknownCount ?? 0,
               })),
             });
           }

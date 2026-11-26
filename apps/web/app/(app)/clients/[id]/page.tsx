@@ -139,7 +139,17 @@ export default async function ClientDetailPage({
         </Card>
       </div>
 
-      <ClientComplianceCharts patches={patches} />
+      <ClientComplianceCharts
+        patches={patches}
+        summaryCounts={{
+          installedCount: client.installedCount,
+          notApplicableCount: client.notApplicableCount,
+          neededCount: client.neededCount,
+          failedCount: client.failedCount,
+          pendingRebootCount: client.pendingRebootCount,
+          unknownCount: client.unknownCount,
+        }}
+      />
 
       <ClientPatchesTable patches={patches} />
     </div>

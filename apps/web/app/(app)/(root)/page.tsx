@@ -36,6 +36,7 @@ export const metadata: Metadata = {
 export default async function DashboardPage() {
   const [
     totalClients,
+    clientSummaryAgg,
     patchTotalsRows,
     stateGroups,
     severityRows,
@@ -43,6 +44,14 @@ export default async function DashboardPage() {
     attentionClientsRaw,
   ] = await Promise.all([
     prisma.clientStatus.count(),
+    prisma.clientStatus.aggregate({
+      _sum: {
+        installedCount: true,
+        neededCount: true,
+        failedCount: true,
+        pendingRebootCount: true,
+      },
+    }),
     prisma.$queryRaw<Array<{ total: bigint; approved: bigint }>>`
       SELECT
         COUNT(DISTINCT "updateId") AS "total",
@@ -87,14 +96,20 @@ export default async function DashboardPage() {
   const stateMap = new Map(
     stateGroups.map((g) => [g.installationState, g._count.installationState])
   );
-  const installedCount = stateMap.get("Installed") ?? 0;
-  const notInstalledCount = stateMap.get("NotInstalled") ?? 0;
-  const failedCount = stateMap.get("Failed") ?? 0;
+  const installedCount =
+    stateMap.get("Installed") ?? (clientSummaryAgg._sum.installedCount ?? 0);
+  const notInstalledCount =
+    stateMap.get("NotInstalled") ?? (clientSummaryAgg._sum.neededCount ?? 0);
+  const failedCount =
+    stateMap.get("Failed") ?? (clientSummaryAgg._sum.failedCount ?? 0);
 
   const stateData = stateGroups.map((g) => ({
     state: g.installationState,
     count: g._count.installationState,
   }));
+  if (!stateMap.has("Installed") && installedCount > 0) {
+    stateData.unshift({ state: "Installed", count: installedCount });
+  }
 
   const severityData = severityRows.map((g) => ({
     severity: g.severity,

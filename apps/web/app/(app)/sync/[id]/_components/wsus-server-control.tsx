@@ -146,7 +146,7 @@ export function WsusServerControl({
   const [requestTimeoutSec, setRequestTimeoutSec] = React.useState("120");
   const [approvedUpdatesOnly, setApprovedUpdatesOnly] = React.useState(false);
   const [skipInstalledClientPatches, setSkipInstalledClientPatches] =
-    React.useState(true);
+    React.useState(false);
   const [toggling, setToggling] = React.useState(false);
 
   const [keyDialogOpen, setKeyDialogOpen] = React.useState(false);

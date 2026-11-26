@@ -35,17 +35,20 @@ export function getComplianceTier(score: number): ComplianceTier {
 }
 
 /**
- * Computes per-device WSUS compliance score: (Installed / Applicable) * 100.
+ * Computes per-device WSUS compliance score following the WSUS Console status chart:
+ * ((Installed + NotApplicable) / (Installed + NotApplicable + Pending + Failed)) * 100.
  */
 export function computeDeviceCompliance(counts: {
   installed: number;
+  notApplicable?: number;
   pending: number;
   failed: number;
   unknown: number;
 }) {
+  const compliantCount = counts.installed + (counts.notApplicable ?? 0);
   const applicable =
-    counts.installed + counts.pending + counts.failed + counts.unknown;
-  const score = applicable > 0 ? (counts.installed / applicable) * 100 : 0;
+    compliantCount + counts.pending + counts.failed + counts.unknown;
+  const score = applicable > 0 ? (compliantCount / applicable) * 100 : 0;
   const isFullyCompliant =
     applicable > 0 &&
     counts.pending === 0 &&
@@ -200,6 +203,7 @@ export function resolveClientOsVersion({
 
       const dateMatch = p.updateTitle.match(/\b(\d{4}-\d{2})\b/);
       const dateKey = dateMatch ? dateMatch[1] : "0000-00";
+      const isCumulative = /\bCumulative\s+Update\b/i.test(p.updateTitle) ? 1 : 0;
       const isInstalled = p.installationState === "Installed" ? 1 : 0;
       const isSecurityOrCumulative =
         p.classification === "Security Updates" ||
@@ -211,6 +215,7 @@ export function resolveClientOsVersion({
       return {
         parsed,
         dateKey,
+        isCumulative,
         isInstalled,
         isSecurityOrCumulative,
         rank: getOsVersionRank(parsed),
@@ -220,9 +225,10 @@ export function resolveClientOsVersion({
 
   if (candidates.length > 0) {
     candidates.sort((a, b) => {
-      if (a.isInstalled !== b.isInstalled) return b.isInstalled - a.isInstalled;
+      if (a.isCumulative !== b.isCumulative) return b.isCumulative - a.isCumulative;
       if (a.dateKey !== b.dateKey) return b.dateKey.localeCompare(a.dateKey);
       if (a.rank !== b.rank) return b.rank - a.rank;
+      if (a.isInstalled !== b.isInstalled) return b.isInstalled - a.isInstalled;
       if (a.isSecurityOrCumulative !== b.isSecurityOrCumulative) {
         return b.isSecurityOrCumulative - a.isSecurityOrCumulative;
       }
@@ -230,9 +236,8 @@ export function resolveClientOsVersion({
     });
 
     const bestPatch = candidates[0];
-    // If osVersion reports a specific, newer Windows build (e.g. after an in-place
-    // upgrade where older patches are still marked Installed), prefer buildOs.
-    if (buildOs && getOsVersionRank(buildOs) > bestPatch.rank) {
+    // If osVersion reports a specific, equal-or-newer Windows build, prefer buildOs.
+    if (buildOs && getOsVersionRank(buildOs) >= bestPatch.rank) {
       return buildOs;
     }
     return bestPatch.parsed;

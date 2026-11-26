@@ -1,4 +1,5 @@
 import {
+  KpiCardsSkeleton,
   PageHeaderSkeleton,
   TableCardSkeleton,
 } from "../_components/page-skeletons";
@@ -6,12 +7,9 @@ import {
 export default function SyncLoading() {
   return (
     <div className="space-y-6">
-      <PageHeaderSkeleton titleWidth="w-48" subtitleWidth="w-80" />
-      <TableCardSkeleton columns={5} rows={4} />
-      <div className="grid gap-4 lg:grid-cols-2">
-        <TableCardSkeleton columns={3} rows={6} />
-        <TableCardSkeleton columns={3} rows={6} />
-      </div>
+      <PageHeaderSkeleton titleWidth="w-64" subtitleWidth="w-96" />
+      <KpiCardsSkeleton count={4} />
+      <TableCardSkeleton columns={4} rows={4} />
     </div>
   );
 }

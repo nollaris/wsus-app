@@ -426,11 +426,16 @@ namespace WsusRestApiInstaller
             // 8. Add AppPool identity to local "WSUS Reporters" group
             string appPoolIdentity = @"IIS AppPool\" + opts.AppPoolName;
             WriteStep("Granting read-only WSUS access (" + appPoolIdentity + " -> WSUS Reporters)...");
-            AddToWsusReportersGroup(appPoolIdentity, opts.AppPoolName);
+            bool reportersMembershipVerified = AddToWsusReportersGroup(appPoolIdentity);
             if (opts.EnableWriteOperations)
             {
                 WriteStep("Granting WSUS write access (" + appPoolIdentity + " -> WSUS Administrators)...");
-                AddToWsusAdministratorsGroup(appPoolIdentity, opts.AppPoolName);
+                AddToWsusAdministratorsGroup(appPoolIdentity);
+            }
+            if (!reportersMembershipVerified)
+            {
+                WriteWarn("WSUS Reporters membership was not verified. The API will be installed, but local WSUS read access is unverified.");
+                WriteWarn("Check that '" + appPoolIdentity + "' is a member of the local WSUS Reporters group.");
             }
 
             // 9. Grant NTFS permissions on InstallDir & App_Data\Logs
@@ -492,11 +497,18 @@ namespace WsusRestApiInstaller
                 }
             }
 
-            // 11. Verify health endpoint
+            // 11. Refresh the worker process and verify actual WSUS data access
+            bool appPoolReady = RefreshApplicationPool(mwa, opts.AppPoolName);
+
+            // 12. Verify health endpoint and protected WSUS summary endpoint
             string healthUrl = "http://localhost:" + opts.Port + opts.AppPath + "/api/v1/health";
             WriteStep("Testing health endpoint: " + healthUrl);
             Thread.Sleep(2000);
             TestHealthEndpoint(healthUrl, logsDir, serializer);
+
+            string summaryUrl = "http://localhost:" + opts.Port + opts.AppPath + "/api/v1/summary";
+            WriteStep("Testing authenticated WSUS data access: " + summaryUrl);
+            TestSummaryEndpoint(summaryUrl, generatedApiKey, logsDir, serializer, appPoolReady);
 
             Console.WriteLine();
             WriteColorLine(ConsoleColor.Green, "============================================================");
@@ -557,17 +569,17 @@ namespace WsusRestApiInstaller
             return false;
         }
 
-        private static void AddToWsusReportersGroup(string appPoolIdentity, string appPoolName)
+        private static bool AddToWsusReportersGroup(string appPoolIdentity)
         {
-            AddToWsusLocalGroup(appPoolIdentity, appPoolName, "WSUS Reporters");
+            return AddToWsusLocalGroup(appPoolIdentity, "WSUS Reporters");
         }
 
-        private static void AddToWsusAdministratorsGroup(string appPoolIdentity, string appPoolName)
+        private static void AddToWsusAdministratorsGroup(string appPoolIdentity)
         {
-            AddToWsusLocalGroup(appPoolIdentity, appPoolName, "WSUS Administrators");
+            AddToWsusLocalGroup(appPoolIdentity, "WSUS Administrators");
         }
 
-        private static void AddToWsusLocalGroup(string appPoolIdentity, string appPoolName, string groupName)
+        private static bool AddToWsusLocalGroup(string appPoolIdentity, string groupName)
         {
             try
             {
@@ -575,29 +587,99 @@ namespace WsusRestApiInstaller
                 if (groupCheck.ExitCode != 0)
                 {
                     WriteWarn("Local group '" + groupName + "' not found. Add the AppPool identity to it manually if required.");
-                    return;
+                    return false;
                 }
 
-                if (groupCheck.StdOut.IndexOf(appPoolName, StringComparison.OrdinalIgnoreCase) >= 0)
+                if (ContainsExactLine(groupCheck.StdOut, appPoolIdentity))
                 {
                     WriteOk("'" + appPoolIdentity + "' is already a member of '" + groupName + "'.");
-                    return;
+                    return true;
                 }
 
                 CommandResult addRes = RunProcess("net.exe", "localgroup " + QuoteArg(groupName) + " " + QuoteArg(appPoolIdentity) + " /add");
-                if (addRes.ExitCode == 0)
-                {
-                    WriteOk("Added '" + appPoolIdentity + "' to '" + groupName + "'.");
-                }
-                else
+                if (addRes.ExitCode != 0)
                 {
                     string err = string.IsNullOrEmpty(addRes.StdErr) ? addRes.StdOut : addRes.StdErr;
                     WriteWarn("Could not update '" + groupName + "' group automatically: " + err.Trim());
+                    return false;
                 }
+
+                CommandResult verify = RunProcess("net.exe", "localgroup " + QuoteArg(groupName));
+                if (verify.ExitCode != 0 || !ContainsExactLine(verify.StdOut, appPoolIdentity))
+                {
+                    WriteWarn("'" + appPoolIdentity + "' membership in '" + groupName + "' could not be verified after the update.");
+                    return false;
+                }
+
+                WriteOk("Added and verified '" + appPoolIdentity + "' in '" + groupName + "'.");
+                return true;
             }
             catch (Exception ex)
             {
                 WriteWarn("Could not update '" + groupName + "' group automatically: " + ex.Message);
+                return false;
+            }
+        }
+
+        private static bool ContainsExactLine(string output, string expected)
+        {
+            string[] lines = (output ?? "").Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string line in lines)
+            {
+                if (string.Equals(line.Trim(), expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool RefreshApplicationPool(Assembly mwa, string appPoolName)
+        {
+            try
+            {
+                Type serverManagerType = mwa.GetType("Microsoft.Web.Administration.ServerManager", true);
+                using (var sm = (IDisposable)Activator.CreateInstance(serverManagerType))
+                {
+                    dynamic dsm = sm;
+                    dynamic pool = null;
+                    foreach (dynamic candidate in dsm.ApplicationPools)
+                    {
+                        if (string.Equals((string)candidate.Name, appPoolName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            pool = candidate;
+                            break;
+                        }
+                    }
+
+                    if (pool == null)
+                    {
+                        WriteWarn("Could not find AppPool '" + appPoolName + "' to refresh its worker process.");
+                        return false;
+                    }
+
+                    string state = Convert.ToString(pool.State);
+                    if (string.Equals(state, "Started", StringComparison.OrdinalIgnoreCase))
+                    {
+                        pool.Recycle();
+                        WriteOk("Recycled AppPool '" + appPoolName + "' so it can use the current group memberships.");
+                        return true;
+                    }
+
+                    if (string.Equals(state, "Stopped", StringComparison.OrdinalIgnoreCase))
+                    {
+                        WriteStep("AppPool '" + appPoolName + "' is stopped; the WSUS data check will start a fresh worker.");
+                        return true;
+                    }
+
+                    WriteWarn("AppPool '" + appPoolName + "' is in state '" + state + "'; worker refresh could not be confirmed.");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteWarn("Could not refresh AppPool '" + appPoolName + "': " + ex.Message);
+                return false;
             }
         }
 
@@ -634,6 +716,128 @@ namespace WsusRestApiInstaller
             {
                 WriteWarn("Health check request failed: " + ex.Message);
                 WriteWarn("Check Event Viewer or " + logsDir + " for details.");
+            }
+        }
+
+        private static bool TestSummaryEndpoint(
+            string summaryUrl,
+            string apiKey,
+            string logsDir,
+            JavaScriptSerializer serializer,
+            bool appPoolReady)
+        {
+            HttpWebResponse response = null;
+            string body = "";
+            try
+            {
+                var req = (HttpWebRequest)WebRequest.Create(summaryUrl);
+                req.Method = "GET";
+                req.Accept = "application/json";
+                req.Headers["X-Api-Key"] = apiKey;
+                req.Timeout = 15000;
+                req.ReadWriteTimeout = 15000;
+
+                try
+                {
+                    response = (HttpWebResponse)req.GetResponse();
+                }
+                catch (WebException ex)
+                {
+                    response = ex.Response as HttpWebResponse;
+                    if (response == null)
+                    {
+                        WriteWarn("Authenticated WSUS data check received no HTTP response (" + ex.Status + "): " + ex.Message);
+                        WriteWarn("Check network responsiveness and " + logsDir + " for API details.");
+                        return false;
+                    }
+                }
+
+                using (Stream stream = response.GetResponseStream())
+                using (var reader = new StreamReader(stream, Encoding.UTF8))
+                {
+                    body = reader.ReadToEnd();
+                    Dictionary<string, object> envelope = null;
+                    try
+                    {
+                        envelope = serializer.Deserialize<Dictionary<string, object>>(body);
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteWarn("Authenticated WSUS data check returned an unreadable response: " + ex.Message);
+                    }
+
+                    bool success = envelope != null &&
+                        envelope.ContainsKey("success") &&
+                        envelope["success"] is bool &&
+                        (bool)envelope["success"];
+
+                    if (response.StatusCode == HttpStatusCode.Unauthorized)
+                    {
+                        WriteWarn("Authenticated WSUS data check was rejected with HTTP " + (int)response.StatusCode + ". Confirm the API key configured in this host matches the portal.");
+                        return false;
+                    }
+
+                    if (success && response.StatusCode == HttpStatusCode.OK)
+                    {
+                        if (appPoolReady)
+                        {
+                            WriteOk("Authenticated WSUS summary query succeeded; local WSUS read access is verified.");
+                            return true;
+                        }
+
+                        WriteWarn("The WSUS summary query succeeded, but AppPool refresh could not be confirmed; read access is not marked verified.");
+                        return false;
+                    }
+
+                    object errorValue;
+                    Dictionary<string, object> error = envelope != null &&
+                        envelope.TryGetValue("error", out errorValue)
+                        ? errorValue as Dictionary<string, object>
+                        : null;
+                    string errorCode = error != null && error.ContainsKey("code")
+                        ? Convert.ToString(error["code"])
+                        : "";
+                    string errorMessage = error != null && error.ContainsKey("message")
+                        ? Convert.ToString(error["message"])
+                        : "";
+
+                    if (errorMessage.IndexOf("access to the path", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        errorMessage.IndexOf("access is denied", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        WriteWarn("The WSUS API could not read local WSUS data: " + errorMessage);
+                        WriteWarn("The request was not rejected by API-key authentication. Verify the AppPool identity's WSUS read permissions.");
+                    }
+                    else if (string.Equals(errorCode, "WSUS_LOCAL_ERROR", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(errorCode, "WSUS_PERMISSION_DENIED", StringComparison.OrdinalIgnoreCase))
+                    {
+                        WriteWarn("The WSUS API could not query local WSUS data: " + errorMessage);
+                    }
+                    else
+                    {
+                        WriteWarn("Authenticated WSUS data check failed with HTTP " + (int)response.StatusCode + ": " +
+                            (string.IsNullOrEmpty(errorMessage) ? "The API response did not confirm WSUS data access." : errorMessage));
+                    }
+                    return false;
+                }
+            }
+            catch (WebException ex)
+            {
+                WriteWarn("Authenticated WSUS data check failed (" + ex.Status + "): " + ex.Message);
+                WriteWarn("Check " + logsDir + " for API details.");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                WriteWarn("Authenticated WSUS data check failed: " + ex.Message);
+                WriteWarn("Check " + logsDir + " for API details.");
+                return false;
+            }
+            finally
+            {
+                if (response != null)
+                {
+                    response.Dispose();
+                }
             }
         }
 

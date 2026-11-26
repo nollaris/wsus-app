@@ -3,10 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { canManageServers, canTriggerSync } from "@/lib/rbac";
-import type { SyncScope } from "@/lib/wsus-api-sync";
+import { canManageServers } from "@/lib/rbac";
 import {
-  ArrowUpRight,
   CheckCircle2,
   Clock3,
   Loader2,
@@ -22,7 +20,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/ui/card";
@@ -37,6 +34,14 @@ import {
 } from "@workspace/ui/components/ui/dialog";
 import { Input } from "@workspace/ui/components/ui/input";
 import { Label } from "@workspace/ui/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@workspace/ui/components/ui/table";
 
 export interface WsusServerItem {
   id: number;
@@ -46,15 +51,6 @@ export interface WsusServerItem {
   lastSyncedAt: string | null;
   lastStatus: string | null;
   lastError: string | null;
-}
-
-function formatSyncError(error: string | null) {
-  if (!error) return null;
-  if (/timed?\s*out|timeout/i.test(error)) {
-    if (/not an API-key rejection/i.test(error)) return error;
-    return `The WSUS API request timed out (${error}). This is not an API-key rejection. Check WSUS/network responsiveness or adjust the per-request timeout.`;
-  }
-  return error;
 }
 
 function formatTimestamp(value: string | null) {
@@ -78,7 +74,6 @@ export function WsusServersManager({
   userRole?: string;
 }) {
   const allowManage = canManageServers(userRole);
-  const allowSync = canTriggerSync(userRole);
   const router = useRouter();
   const initialServersKey = JSON.stringify(initialServers);
   const [serverSnapshot, setServerSnapshot] = React.useState<{
@@ -98,10 +93,6 @@ export function WsusServersManager({
   const [apiKey, setApiKey] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
 
-  const [startingAll, setStartingAll] = React.useState(false);
-  const [startingServerIds, setStartingServerIds] = React.useState<number[]>(
-    [],
-  );
   const [feedback, setFeedback] = React.useState<{
     type: "success" | "error";
     message: string;
@@ -109,9 +100,6 @@ export function WsusServersManager({
 
   const enabledServers = servers.filter((s) => s.enabled);
   const anySyncing = servers.some((s) => s.lastStatus === "Syncing");
-  const allEnabledSyncing =
-    enabledServers.length > 0 &&
-    enabledServers.every((s) => s.lastStatus === "Syncing");
 
   const fetchLatestServers = React.useCallback(async () => {
     const res = await fetch("/api/wsus-servers", { cache: "no-store" });
@@ -175,74 +163,52 @@ export function WsusServersManager({
     }
   }
 
-  async function handleSync(
-    serverId: number | "all",
-    scope: SyncScope = "all",
-  ) {
-    if (serverId === "all") {
-      setStartingAll(true);
-    } else {
-      setStartingServerIds((prev) =>
-        prev.includes(serverId) ? prev : [...prev, serverId],
-      );
-    }
-    setFeedback(null);
-    try {
-      const res = await fetch("/api/wsus-sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          serverId === "all" ? { scope } : { serverId, scope },
-        ),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error ?? "Failed to start synchronization");
-      }
-
-      const startedIds: number[] = Array.isArray(data.startedIds)
-        ? data.startedIds
-        : [];
-      const alreadyRunningIds: number[] = Array.isArray(data.alreadyRunningIds)
-        ? data.alreadyRunningIds
-        : [];
-      const scopeLabel = scope === "all" ? "Full sync" : `${scope} sync`;
-      const message =
-        startedIds.length === 0 && alreadyRunningIds.length > 0
-          ? serverId === "all"
-            ? "All enabled servers are already syncing."
-            : "This server is already syncing."
-          : serverId === "all"
-            ? `${scopeLabel} started for ${startedIds.length} server${startedIds.length === 1 ? "" : "s"}${alreadyRunningIds.length ? `; ${alreadyRunningIds.length} already syncing` : ""}.`
-            : `${scopeLabel} started.`;
-      setFeedback({
-        type: "success",
-        message: `${message} Status will update automatically.`,
-      });
-      await fetchLatestServers();
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        message: err instanceof Error ? err.message : "Sync failed",
-      });
-    } finally {
-      if (serverId === "all") {
-        setStartingAll(false);
-      } else {
-        setStartingServerIds((prev) => prev.filter((id) => id !== serverId));
-      }
-    }
-  }
-
   const syncingCount = servers.filter(
     (server) => server.lastStatus === "Syncing",
+  ).length;
+  const healthyCount = servers.filter(
+    (server) => server.enabled && server.lastStatus === "Success",
   ).length;
   const failedCount = servers.filter(
     (server) => server.lastStatus === "Failed",
   ).length;
 
+  const stats = [
+    {
+      label: "Configured servers",
+      value: servers.length,
+      description: `${enabledServers.length} enabled for sync`,
+      icon: Server,
+      iconClass: "bg-muted text-muted-foreground",
+    },
+    {
+      label: "Healthy",
+      value: healthyCount,
+      description: "Last synchronization succeeded",
+      icon: CheckCircle2,
+      iconClass: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    },
+    {
+      label: "Syncing",
+      value: syncingCount,
+      description: syncingCount > 0 ? "Active sync in progress" : "Idle",
+      icon: RefreshCw,
+      iconClass: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+    },
+    {
+      label: "Needs attention",
+      value: failedCount,
+      description: failedCount > 0 ? "Failed last synchronization" : "No sync errors",
+      icon: XCircle,
+      iconClass:
+        failedCount > 0
+          ? "bg-destructive/10 text-destructive"
+          : "bg-muted text-muted-foreground",
+    },
+  ];
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {feedback && (
         <Alert
           variant={feedback.type === "error" ? "destructive" : "default"}
@@ -252,30 +218,28 @@ export function WsusServersManager({
         </Alert>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          { label: "Configured servers", value: servers.length, icon: Server },
-          {
-            label: "Enabled",
-            value: enabledServers.length,
-            icon: CheckCircle2,
-          },
-          { label: "Syncing", value: syncingCount, icon: RefreshCw },
-          { label: "Needs attention", value: failedCount, icon: XCircle },
-        ].map((stat) => {
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {stats.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Card key={stat.label} size="sm">
-              <CardContent className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">{stat.label}</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">
-                    {stat.value}
-                  </p>
+            <Card key={stat.label}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {stat.label}
+                </CardTitle>
+                <div
+                  className={`flex size-8 items-center justify-center rounded-lg ${stat.iconClass}`}
+                >
+                  <Icon className="size-4" />
                 </div>
-                <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <Icon className="size-5" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold tabular-nums">
+                  {stat.value}
                 </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {stat.description}
+                </p>
               </CardContent>
             </Card>
           );
@@ -285,36 +249,21 @@ export function WsusServersManager({
       <Card>
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2">
-              <Server className="size-5" />
-              WSUS servers
-            </CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Server className="size-5" />
+                WSUS servers
+              </CardTitle>
+              <Badge variant="secondary" className="font-mono tabular-nums">
+                {servers.length}
+              </Badge>
+            </div>
             <CardDescription className="mt-1">
-              Sync status, endpoint, and last update for each connected server.
+              Sync status, API endpoint, and last update for each connected server.
             </CardDescription>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {allowSync && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={
-                  startingAll ||
-                  allEnabledSyncing ||
-                  enabledServers.length === 0
-                }
-                onClick={() => handleSync("all")}
-              >
-                {startingAll || allEnabledSyncing ? (
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-2 size-4" />
-                )}
-                Sync all enabled
-              </Button>
-            )}
-
             {allowManage && (
               <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogTrigger
@@ -394,7 +343,7 @@ export function WsusServersManager({
           </div>
         </CardHeader>
 
-        <CardContent className="pb-4">
+        <CardContent>
           {servers.length === 0 ? (
             <div className="rounded-xl border border-dashed px-6 py-12 text-center">
               <Server className="mx-auto size-8 text-muted-foreground" />
@@ -404,26 +353,31 @@ export function WsusServersManager({
               </p>
             </div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              {servers.map((srv) => {
-                const isRowSyncing =
-                  srv.lastStatus === "Syncing" ||
-                  startingServerIds.includes(srv.id);
-                const syncError =
-                  srv.lastStatus === "Failed"
-                    ? formatSyncError(srv.lastError)
-                    : null;
-
-                return (
-                  <Card key={srv.id} size="sm" className="min-w-0">
-                    <CardHeader className="gap-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <CardTitle className="truncate">{srv.name}</CardTitle>
-                          <CardDescription className="mt-1 break-all font-mono text-xs">
-                            {srv.baseUrl}
-                          </CardDescription>
-                        </div>
+            <div className="overflow-x-auto rounded-lg border">
+              <Table className="min-w-[780px]">
+                <TableHeader>
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableHead>Server</TableHead>
+                    <TableHead>API Endpoint</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Last Sync · ICT</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {servers.map((srv) => (
+                    <TableRow key={srv.id}>
+                      <TableCell>
+                        <Link
+                          href={`/sync/${srv.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {srv.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        <span className="break-all">{srv.baseUrl}</span>
+                      </TableCell>
+                      <TableCell>
                         <Badge
                           variant={
                             !srv.enabled
@@ -438,9 +392,9 @@ export function WsusServersManager({
                             !srv.enabled
                               ? ""
                               : srv.lastStatus === "Syncing"
-                                ? "border-sky-500/30 bg-sky-500/10 text-sky-700"
+                                ? "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
                                 : srv.lastStatus === "Success"
-                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                                   : ""
                           }
                         >
@@ -465,54 +419,14 @@ export function WsusServersManager({
                                   ? "Failed"
                                   : (srv.lastStatus ?? "Not synced")}
                         </Badge>
-                      </div>
-                    </CardHeader>
-
-                    <CardContent className="space-y-3">
-                      <div className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2 text-sm">
-                        <span className="text-muted-foreground">Last sync</span>
-                        <span className="text-right font-medium">
-                          {formatTimestamp(srv.lastSyncedAt)}
-                        </span>
-                      </div>
-                      {syncError && (
-                        <Alert variant="destructive">
-                          <XCircle className="size-4" />
-                          <AlertDescription className="wrap-break-word">
-                            {syncError}
-                          </AlertDescription>
-                        </Alert>
-                      )}
-                    </CardContent>
-
-                    <CardFooter className="flex flex-wrap justify-end gap-2">
-                      <Button
-                        nativeButton={false}
-                        render={<Link href={`/sync/${srv.id}`} />}
-                        variant="outline"
-                        size="sm"
-                      >
-                        Manage
-                        <ArrowUpRight className="ml-1 size-4" />
-                      </Button>
-                      {allowSync && (
-                        <Button
-                          size="sm"
-                          disabled={!srv.enabled || isRowSyncing}
-                          onClick={() => handleSync(srv.id)}
-                        >
-                          {isRowSyncing ? (
-                            <Loader2 className="mr-1.5 size-4 animate-spin" />
-                          ) : (
-                            <RefreshCw className="mr-1.5 size-4" />
-                          )}
-                          {isRowSyncing ? "Syncing" : "Sync now"}
-                        </Button>
-                      )}
-                    </CardFooter>
-                  </Card>
-                );
-              })}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
+                        {formatTimestamp(srv.lastSyncedAt)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
         </CardContent>

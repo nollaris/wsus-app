@@ -9,6 +9,7 @@ REST API designed to be installed on each **WSUS Server**. It connects exclusive
 - **Non-Colliding Port 8530 Hosting**: Installs as an IIS sub-application at `/wsus-api` under the `WSUS Administration` site with an isolated AppPool (`WsusRestApiPool`), avoiding collisions with built-in WSUS endpoints.
 - **5-Minute Refresh & Caching**: `MemoryCache` with a 5-minute TTL and a 5-minute background refresh interval.
 - **Restricted Write Access**: Allows read requests and selected `POST` controls. The default installation grants only `WSUS Reporters`; opt in to write operations with `--enable-write-operations`, which adds the AppPool identity to `WSUS Administrators`.
+- **Post-install verification**: Attempts and verifies the AppPool's `WSUS Reporters` membership, refreshes its worker process, and tests authenticated access to the local WSUS summary. A healthy `/health` response alone does not confirm WSUS data access.
 - **Configuration**:
   - `Config/security.json` — `authEnabled`, `apiKeys`, `bearerTokens`, `allowedOrigins`
   - `Config/Wsus/wsus-settings.json` — `serverId`, `serverName`, `cacheDurationMinutes`, `enableBackgroundRefresh`, `maxSyncHistoryItems`
@@ -44,3 +45,4 @@ These controls do not expose endpoints to decline updates, remove computers, or 
 3. Adjust additional settings if needed:
    - `C:\inetpub\wsus-api\Config\security.json`
    - `C:\inetpub\wsus-api\Config\Wsus\wsus-settings.json` (configure `serverId`/`serverName` and the 5-minute refresh interval)
+4. Review the installer output for the authenticated WSUS summary check. If it reports that read access is unverified, confirm that `IIS AppPool\WsusRestApiPool` belongs to the local `WSUS Reporters` group and inspect the reported API error. The installer keeps the existing least-privilege setup and does not add the AppPool to `WSUS Administrators` unless `--enable-write-operations` is specified.
